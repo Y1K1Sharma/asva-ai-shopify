@@ -1,46 +1,50 @@
 {% comment %}
-  Asva AI — Organization Schema.org JSON-LD app block.
+  Asva AI — Organization Schema.org JSON-LD app embed.
 
-  Adds Schema.org/Organization structured data to your storefront. AI
-  agents use this to identify the brand, find official social/contact
-  channels, and verify authoritativeness when answering "where can I
-  buy X" queries.
+  Runs in <head> on every storefront page but emits the
+  Schema.org/Organization structured data ONLY on the homepage
+  (template == 'index'). AI agents use this to identify your
+  brand, find official social/contact channels, and verify the
+  brand is authoritative when answering "where can I buy X."
 
-  Pick up shop name + logo + domain from the shop object; let the
-  merchant override social links via block settings.
+  Shop name + logo are pulled from the shop object automatically.
+  Merchant can add legal name, contact email, and social profile
+  URLs via the block settings below — these flow into the
+  Organization JSON-LD as `legalName`, `email`, and `sameAs`.
 {% endcomment %}
 
-{%- assign social_profiles = '' -%}
-{%- if block.settings.facebook_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.facebook_url | append: '",' -%}{%- endif -%}
-{%- if block.settings.instagram_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.instagram_url | append: '",' -%}{%- endif -%}
-{%- if block.settings.twitter_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.twitter_url | append: '",' -%}{%- endif -%}
-{%- if block.settings.linkedin_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.linkedin_url | append: '",' -%}{%- endif -%}
-{%- if block.settings.tiktok_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.tiktok_url | append: '",' -%}{%- endif -%}
-{%- assign social_profiles = social_profiles | replace_last: ',', '' -%}
+{%- if template == 'index' -%}
+  {%- assign social_profiles = '' -%}
+  {%- if block.settings.facebook_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.facebook_url | append: '",' -%}{%- endif -%}
+  {%- if block.settings.instagram_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.instagram_url | append: '",' -%}{%- endif -%}
+  {%- if block.settings.twitter_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.twitter_url | append: '",' -%}{%- endif -%}
+  {%- if block.settings.linkedin_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.linkedin_url | append: '",' -%}{%- endif -%}
+  {%- if block.settings.tiktok_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.tiktok_url | append: '",' -%}{%- endif -%}
+  {%- assign social_profiles = social_profiles | replace_last: ',', '' -%}
 
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": {{ shop.name | json }},
-  "url": {{ shop.url | json }}{% if shop.brand.square_logo %},
-  "logo": "https:{{ shop.brand.square_logo | image_url: width: 512 }}"{% elsif shop.brand.logo %},
-  "logo": "https:{{ shop.brand.logo | image_url: width: 512 }}"{% endif %}{% if block.settings.legal_name != blank %},
-  "legalName": {{ block.settings.legal_name | json }}{% endif %}{% if block.settings.contact_email != blank %},
-  "email": {{ block.settings.contact_email | json }}{% endif %}{% if social_profiles != blank %},
-  "sameAs": [{{ social_profiles }}]{% endif %}
-}
-</script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": {{ shop.name | json }},
+    "url": {{ shop.url | json }}{% if shop.brand.square_logo %},
+    "logo": "https:{{ shop.brand.square_logo | image_url: width: 512 }}"{% elsif shop.brand.logo %},
+    "logo": "https:{{ shop.brand.logo | image_url: width: 512 }}"{% endif %}{% if block.settings.legal_name != blank %},
+    "legalName": {{ block.settings.legal_name | json }}{% endif %}{% if block.settings.contact_email != blank %},
+    "email": {{ block.settings.contact_email | json }}{% endif %}{% if social_profiles != blank %},
+    "sameAs": [{{ social_profiles }}]{% endif %}
+  }
+  </script>
+{%- endif -%}
 
 {% schema %}
 {
   "name": "Org JSON-LD (Asva AI)",
-  "target": "section",
-  "templates": ["index"],
+  "target": "head",
   "settings": [
     {
       "type": "paragraph",
-      "content": "Adds Schema.org/Organization structured data to your homepage. Helps AI agents identify your brand. Add your social URLs below — agents use these to verify the brand is authoritative."
+      "content": "Emits Schema.org/Organization structured data on your homepage. AI agents read it to identify your brand. Shop name and logo are pulled automatically — add social URLs below for richer signals."
     },
     {
       "type": "text",

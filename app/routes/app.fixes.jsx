@@ -91,15 +91,15 @@ export default function FixesPage() {
         {unlocked && (
           <Banner title="How Apply fix works" tone="info">
             <p>
-              Fixes tagged <strong>Theme block available</strong> can be applied via a Shopify
-              theme block. Click <strong>Apply fix</strong> → the theme editor opens in a new
-              tab on the right surface → add the Asva AI block from the picker → click{" "}
-              <strong>Save</strong> in the editor → come back here and click <strong>Rescan</strong>{" "}
-              on the Home page. Your score updates after the rescan completes.
+              Fixes tagged <strong>Theme embed available</strong> are applied via Shopify&rsquo;s
+              App embeds panel. Click <strong>Apply fix</strong> → a new tab opens at Theme
+              Settings → App embeds → toggle on the Asva AI embed named in the tooltip → click
+              <strong> Save</strong> in the editor → return to Asva AI and click <strong>Rescan</strong>{" "}
+              on the Home page. Your score updates after the rescan completes (~30 seconds).
             </p>
             <p>
               Fixes tagged <strong>Manual fix</strong> need server-side changes (HTTPS, HSTS,
-              CORS headers, manifest hosting) that the app can&rsquo;t apply from inside
+              CORS headers, UCP manifest hosting) that the app can&rsquo;t apply from inside
               Shopify. Use the description and code snippet below each fix as your reference.
             </p>
           </Banner>
@@ -210,20 +210,23 @@ function FixCard({ fix, unlocked, index, shop }) {
   const applyUrl = applyFixUrl(fix, shop);
   const block = blockForCheckId(fix.check_id);
   const blockType = blockTypeFor(block);
-  // Block-specific instruction. Each tooltip is a precise 3-step
-  // recipe so the merchant knows exactly what to click. The score
-  // only moves after step 3 (Save + Rescan).
+  // Block-specific instruction. Each tooltip names the exact embed
+  // the merchant has to toggle on so they don't pick the wrong one.
+  // Every block is now an embed; the App embeds panel is one click
+  // away. Score only moves after Save (in editor) + Rescan (in app).
   const BLOCK_INSTRUCTIONS = {
     "product-jsonld":
-      "1) Theme editor opens at your Product template. 2) Click + → Apps → add 'Product JSON-LD (Asva AI)'. 3) Click Save, then come back and Rescan.",
+      "Opens Theme Settings → App embeds. Toggle on 'Product JSON-LD (Asva AI)' → click Save in the editor → come back to Asva AI and click Rescan on the Home page.",
     "organization-jsonld":
-      "1) Theme editor opens at your Home template. 2) Click + → Apps → add 'Org JSON-LD (Asva AI)'. 3) Click Save, then come back and Rescan.",
+      "Opens Theme Settings → App embeds. Toggle on 'Org JSON-LD (Asva AI)' → click Save in the editor → come back to Asva AI and click Rescan on the Home page.",
+    "bot-allowlist":
+      "Opens Theme Settings → App embeds. Toggle on 'Bot allow-list (Asva AI)' → click Save → come back and Rescan.",
+    "ucp-manifest-hint":
+      "Opens Theme Settings → App embeds. Toggle on 'UCP discovery (Asva AI)' → paste your manifest URL → click Save → come back and Rescan.",
   };
   const applyTooltip =
     BLOCK_INSTRUCTIONS[block] ||
-    (blockType === "embed"
-      ? "Opens Theme Settings → App embeds. Toggle on the Asva AI embed, then click Save."
-      : "Opens the theme editor. Add the Asva AI block from the Apps section, then click Save.");
+    "Opens Theme Settings → App embeds. Toggle on the Asva AI embed, click Save, then come back and Rescan.";
 
   return (
     <Card>
@@ -249,7 +252,7 @@ function FixCard({ fix, unlocked, index, shop }) {
               {fix.platform && fix.platform !== "custom" && (
                 <Badge tone="info">{fix.platform}</Badge>
               )}
-              {applyUrl && <Badge tone="success">Theme block available</Badge>}
+              {applyUrl && <Badge tone="success">Theme embed available</Badge>}
             </InlineStack>
           </BlockStack>
           <Box>

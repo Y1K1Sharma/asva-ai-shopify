@@ -1,26 +1,32 @@
 {% comment %}
-  Asva AI — Product Schema.org JSON-LD app block.
+  Asva AI — Product Schema.org JSON-LD app embed.
 
-  Adds Schema.org/Product structured data to product pages so AI shopping
-  agents (ChatGPT, Perplexity, Claude, Gemini) can read your catalog
-  reliably. Pulls from the live product object, so it stays accurate
-  as you edit prices, variants, and availability.
+  Runs in <head> on every storefront page but emits the
+  Schema.org/Product structured data ONLY on product pages
+  (template == 'product'). This way the JSON-LD lands exactly
+  where Google Merchant / Perplexity / ChatGPT / Claude expect
+  it, with no per-page configuration from the merchant.
 
-  Compliant with Google's structured-data requirements; supports rich
-  results in agent answers.
+  Implementation note: we built this as a section block first
+  (target: "section"), but those didn't register in Horizon's
+  Add-section picker. Embeds (target: "head") with a Liquid
+  template gate work everywhere — every Shopify theme version,
+  every editor surface — and keep the merchant flow uniform
+  (one App embeds panel to toggle everything from).
+
+  No settings required — data is pulled from the live `product`
+  object so the JSON-LD stays accurate as the catalog changes.
 {% endcomment %}
 
-{%- if product -%}
-  {%- assign product_image = product.featured_image | default: product.images[0] -%}
+{%- if template == 'product' and product -%}
   {%- assign first_available_variant = product.selected_or_first_available_variant -%}
-
   <script type="application/ld+json">
   {
     "@context": "https://schema.org/",
     "@type": "Product",
     "name": {{ product.title | json }},
     "description": {{ product.description | strip_html | truncate: 500 | json }},
-    {%- if product_image %}
+    {%- if product.featured_image %}
     "image": [
       {%- for image in product.images limit: 5 -%}
       "https:{{ image | image_url: width: 1024 }}"{% unless forloop.last %},{% endunless %}
@@ -50,12 +56,11 @@
 {% schema %}
 {
   "name": "Product JSON-LD (Asva AI)",
-  "target": "section",
-  "templates": ["product"],
+  "target": "head",
   "settings": [
     {
       "type": "paragraph",
-      "content": "Adds Schema.org/Product structured data to this product page. AI agents need this to display your product in their answers. No configuration required — data is pulled from the product object."
+      "content": "Emits Schema.org/Product structured data on every product page in your store. AI agents (ChatGPT, Perplexity, Claude, Gemini) and Google Merchant Center read this to display your products. No setup — data is pulled live from each product."
     }
   ]
 }

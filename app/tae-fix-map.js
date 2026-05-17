@@ -18,15 +18,19 @@
 // block, verify this matches the live `uid` in the toml.
 export const TAE_EXTENSION_UID = "481f0e81-a8fa-e1ba-936c-c5839f1dcf13881b2d0d";
 
-// Per-block configuration: type (section vs embed) + the surface it
-// targets. The URL contract Shopify expects differs by type:
-//   section : ?template=<template>&activateAppId=<uid>/<handle>
-//   embed   : ?context=apps&activateAppId=<uid>/<handle>
-// Sending an embed link with ?template= or a section link with
-// ?context=apps lands the merchant in the wrong panel.
+// All 4 blocks are now embeds (target: "head") with Liquid template
+// gates inside the .liquid files. Section-target blocks didn't
+// register in Horizon's Add-section picker so we couldn't expose
+// them through a deep-link reliably. Embeds appear in the unified
+// Theme Settings → App embeds panel everywhere, every theme.
+//
+// The Liquid template gate inside each block makes the JSON-LD
+// emit only on the right page:
+//   product-jsonld       → {% if template == 'product' %}
+//   organization-jsonld  → {% if template == 'index' %}
 const BLOCK_CONFIG = {
-  "product-jsonld":      { type: "section", template: "product" },
-  "organization-jsonld": { type: "section", template: "index" },
+  "product-jsonld":      { type: "embed" },
+  "organization-jsonld": { type: "embed" },
   "ucp-manifest-hint":   { type: "embed" },
   "bot-allowlist":       { type: "embed" },
 };
@@ -123,24 +127,10 @@ export function themeEditorUrlForBlock(shop, blockHandle) {
   if (!config) return null;
   const shopHandle = shop.replace(/\.myshopify\.com$/, "");
 
-  // The activateAppId deep-link param is documented but unreliable in
-  // practice (Shopify admin silently strips it when the UID doesn't
-  // resolve, dumping the merchant on a blank screen or the App embeds
-  // panel regardless of intent). We don't depend on it. Instead:
-  //
-  //   section : open editor at the right template — merchant clicks
-  //             + → Apps → Asva block → Save
-  //   embed   : open the Theme Settings → App embeds panel — merchant
-  //             toggles the Asva embed on → Save
-  //
-  // The Fixes-page tooltip and the top-of-page banner spell out the
-  // exact steps so the merchant isn't lost.
-  const params = new URLSearchParams();
-  if (config.type === "embed") {
-    params.set("context", "apps");
-  } else {
-    params.set("template", config.template || "index");
-  }
+  // All 4 blocks are embeds — uniform URL to the App embeds panel.
+  // No activateAppId (it's been unreliable, silently stripped by
+  // Shopify admin when the UID format doesn't fully resolve).
+  const params = new URLSearchParams({ context: "apps" });
   return `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?${params.toString()}`;
 }
 
