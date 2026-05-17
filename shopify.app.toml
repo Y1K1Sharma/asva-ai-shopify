@@ -32,8 +32,19 @@ api_version = "2026-04"
   topics = [ "app/uninstalled" ]
 
 [access_scopes]
-# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_inventory,read_locales,write_metaobject_definitions,write_metaobjects,read_products,write_products,read_themes"
+# Minimum-scopes per Shopify App Store §16. Only request scopes the
+# app actually uses today. New scopes can be added in a future version
+# with a re-consent prompt when we ship features that need them
+# (e.g. write_themes once Protected Scope Exemption lands).
+#
+# Currently used:
+#   read_products — Admin GraphQL query in /app/catalog page
+#
+# Webhook subscriptions (customers/data_request, customers/redact,
+# shop/redact, app/scopes_update, app/uninstalled) don't require any
+# additional scopes — they're either mandatory compliance topics or
+# app-lifecycle events.
+scopes = "read_products"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 

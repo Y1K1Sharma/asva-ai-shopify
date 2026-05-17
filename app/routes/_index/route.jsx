@@ -61,11 +61,12 @@ export default function App() {
           </li>
           <li className={styles.featureItem}>
             <span className={styles.featureNum}>02</span>
-            <h3 className={styles.featureTitle}>One-click fixes</h3>
+            <h3 className={styles.featureTitle}>Theme-embed fixes</h3>
             <p className={styles.featureBody}>
-              Apply Fix buttons toggle Theme App Extension blocks on your
-              storefront — JSON-LD, UCP manifest, bot allow-list. No theme
-              edits, no developer required.
+              Apply Fix opens Theme Settings → App embeds with the right
+              Asva AI block highlighted. Toggle on, click Save, and your
+              storefront emits Schema.org JSON-LD, manifest discovery
+              hints, and an AI bot allow-list. No theme code edits.
             </p>
           </li>
           <li className={styles.featureItem}>
