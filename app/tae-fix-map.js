@@ -55,36 +55,39 @@ export function blockTypeFor(blockHandle) {
  *     page instead.
  */
 const CHECK_TO_BLOCK = {
-  // Product JSON-LD — every product-schema-related check
+  // Product JSON-LD section → product template.
   "discovery-product-schema": "product-jsonld",
   "ai-google-merchant-product-schema": "product-jsonld",
   "product-structured-data": "product-jsonld",
 
-  // Organization JSON-LD on homepage — both Organization-flavored and
-  // generic Schema.org-on-homepage checks share the same block.
+  // Organization / WebSite / Schema.org JSON-LD section → homepage.
+  //
+  // The bot-readiness checks (Perplexity, Claude, etc.) ALSO map here
+  // because their backend definition is "robots.txt allows the agent
+  // AND Schema.org JSON-LD is on the homepage." Shopify's default
+  // robots.txt already allows everything, so the missing half is the
+  // Schema.org JSON-LD — which this section provides.
+  //
+  // Previously these were mapped to bot-allowlist (an embed that
+  // emits a custom JSON-LD with @context: asvaai.com). The audit
+  // doesn't look for that custom context — it looks for schema.org.
+  // So toggling that embed didn't move the score. Mapping to
+  // organization-jsonld (a real Schema.org block) does.
   "discovery-organization-schema": "organization-jsonld",
   "discovery-schema-org-jsonld": "organization-jsonld",
   "schema-org-json-ld": "organization-jsonld",
   "ai-organization-schema": "organization-jsonld",
+  "ai-perplexity-readiness": "organization-jsonld",
+  "ai-claude-readiness": "organization-jsonld",
+  "ai-gpt-readiness": "organization-jsonld",
+  "ai-gemini-readiness": "organization-jsonld",
+  "ai-apple-intelligence-readiness": "organization-jsonld",
 
-  // UCP manifest discovery hint — adds <link rel="ucp-manifest">.
-  // Does NOT host the manifest itself (Asset API gate).
-  "discovery-ucp-manifest-link": "ucp-manifest-hint",
-  "manifest-discoverable": "ucp-manifest-hint",
-
-  // Bot allow-list — every AI-platform-readiness check + per-bot ones.
-  "ai-perplexity-readiness": "bot-allowlist",
-  "ai-claude-readiness": "bot-allowlist",
-  "ai-gpt-readiness": "bot-allowlist",
-  "ai-gemini-readiness": "bot-allowlist",
-  "ai-apple-intelligence-readiness": "bot-allowlist",
-  "gptbot-allowed": "bot-allowlist",
-  "oai-searchbot-allowed": "bot-allowlist",
-  "chatgpt-user-allowed": "bot-allowlist",
-  "perplexity-allowed": "bot-allowlist",
-  "claudebot-allowed": "bot-allowlist",
-  "google-extended-allowed": "bot-allowlist",
-  "applebot-extended-allowed": "bot-allowlist",
+  // The bot-allowlist embed and ucp-manifest-hint embed remain in
+  // the TAE but are NOT exposed as Apply Fix targets in v1 — they
+  // emit signals the current audit doesn't check for. Merchants who
+  // want to opt into them can enable them manually in Theme Settings
+  // → App embeds.
 };
 
 export function blockForCheckId(checkId) {

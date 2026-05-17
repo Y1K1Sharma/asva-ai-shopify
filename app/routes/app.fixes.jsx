@@ -88,6 +88,22 @@ export default function FixesPage() {
             </p>
           </Banner>
         )}
+        {unlocked && (
+          <Banner title="How Apply fix works" tone="info">
+            <p>
+              <strong>1-click apply</strong> fixes open the Shopify theme editor with the Asva
+              AI block ready to add. Add the block to your theme, click <strong>Save</strong>{" "}
+              in the theme editor, then return to Asva AI and click <strong>Rescan</strong>{" "}
+              on the Home page. Your score updates after the rescan finishes.
+            </p>
+            <p>
+              <strong>Manual fix</strong> items need server-side changes
+              (HTTPS, headers, manifest hosting) that the app cannot apply
+              from inside Shopify. Use the description and code snippet
+              below each fix as a reference.
+            </p>
+          </Banner>
+        )}
         <FixList fixes={allFixes} unlocked={unlocked} shop={shop} />
       </BlockStack>
     </Page>
@@ -194,10 +210,20 @@ function FixCard({ fix, unlocked, index, shop }) {
   const applyUrl = applyFixUrl(fix, shop);
   const block = blockForCheckId(fix.check_id);
   const blockType = blockTypeFor(block);
+  // Block-specific instruction. Each tooltip is a precise 3-step
+  // recipe so the merchant knows exactly what to click. The score
+  // only moves after step 3 (Save + Rescan).
+  const BLOCK_INSTRUCTIONS = {
+    "product-jsonld":
+      "1) Theme editor opens at your Product template. 2) Click + → Apps → add 'Product JSON-LD (Asva AI)'. 3) Click Save, then come back and Rescan.",
+    "organization-jsonld":
+      "1) Theme editor opens at your Home template. 2) Click + → Apps → add 'Org JSON-LD (Asva AI)'. 3) Click Save, then come back and Rescan.",
+  };
   const applyTooltip =
-    blockType === "embed"
+    BLOCK_INSTRUCTIONS[block] ||
+    (blockType === "embed"
       ? "Opens Theme Settings → App embeds. Toggle on the Asva AI embed, then click Save."
-      : "Opens the theme editor at the right template. Add the Asva AI block from the Apps section, then click Save.";
+      : "Opens the theme editor. Add the Asva AI block from the Apps section, then click Save.");
 
   return (
     <Card>
