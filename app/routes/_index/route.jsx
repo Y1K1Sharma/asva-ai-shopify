@@ -53,9 +53,10 @@ export default function App() {
             <span className={styles.featureNum}>01</span>
             <h3 className={styles.featureTitle}>Full readiness audit</h3>
             <p className={styles.featureBody}>
-              Scans 147 checks across UCP manifest, ACP capabilities, runtime
-              endpoints, and AI-platform-specific signals (ChatGPT, Perplexity,
-              Claude, Gemini, Google, Apple).
+              Audits your storefront against UCP manifest, ACP capabilities,
+              runtime endpoints, and AI-platform signals — ChatGPT, Perplexity,
+              Claude, Gemini, Google, Apple. Pass/warn/fail report with severity
+              and impact for every issue.
             </p>
           </li>
           <li className={styles.featureItem}>
