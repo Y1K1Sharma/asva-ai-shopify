@@ -19,7 +19,7 @@ import {
   Tooltip,
 } from "@shopify/polaris";
 import { SEVERITY_TONE, SEVERITIES, scanIsUnlocked } from "../scan-utils";
-import { applyFixUrl } from "../tae-fix-map";
+import { applyFixUrl, blockForCheckId, blockTypeFor } from "../tae-fix-map";
 
 export const loader = async ({ request }) => loadShopScan(request);
 
@@ -192,6 +192,12 @@ function FixCard({ fix, unlocked, index, shop }) {
   const effortTone = EFFORT_TONE[fix.effort];
   const hasCode = Boolean(fix.code_snippet);
   const applyUrl = applyFixUrl(fix, shop);
+  const block = blockForCheckId(fix.check_id);
+  const blockType = blockTypeFor(block);
+  const applyTooltip =
+    blockType === "embed"
+      ? "Opens Theme Settings → App embeds. Toggle on the Asva AI embed, then click Save."
+      : "Opens the theme editor at the right template. Add the Asva AI block from the Apps section, then click Save.";
 
   return (
     <Card>
@@ -222,7 +228,7 @@ function FixCard({ fix, unlocked, index, shop }) {
           </BlockStack>
           <Box>
             {applyUrl ? (
-              <Tooltip content="Opens the theme editor on the Apps tab. Find the Asva AI block in the list, drag it onto the page, then click Save.">
+              <Tooltip content={applyTooltip}>
                 <Button
                   variant="primary"
                   url={applyUrl}

@@ -18,14 +18,22 @@
 // block, verify this matches the live `uid` in the toml.
 export const TAE_EXTENSION_UID = "481f0e81-a8fa-e1ba-936c-c5839f1dcf13881b2d0d";
 
-// Block targets (where the editor surface drops the block).
-// Used to pick the right `template=` query param when deep-linking.
-const TEMPLATE_BY_BLOCK = {
-  "product-jsonld": "product",
-  "organization-jsonld": "index",
-  "ucp-manifest-hint": "index",
-  "bot-allowlist": "index",
+// Per-block configuration: type (section vs embed) + the surface it
+// targets. The URL contract Shopify expects differs by type:
+//   section : ?template=<template>&activateAppId=<uid>/<handle>
+//   embed   : ?context=apps&activateAppId=<uid>/<handle>
+// Sending an embed link with ?template= or a section link with
+// ?context=apps lands the merchant in the wrong panel.
+const BLOCK_CONFIG = {
+  "product-jsonld":      { type: "section", template: "product" },
+  "organization-jsonld": { type: "section", template: "index" },
+  "ucp-manifest-hint":   { type: "embed" },
+  "bot-allowlist":       { type: "embed" },
 };
+
+export function blockTypeFor(blockHandle) {
+  return BLOCK_CONFIG[blockHandle]?.type || null;
+}
 
 /**
  * Mapping from backend check IDs (the keys in scan.checks[].id) and fix
@@ -108,14 +116,20 @@ export function blockForCheckId(checkId) {
  */
 export function themeEditorUrlForBlock(shop, blockHandle) {
   if (!shop || !blockHandle) return null;
-  const template = TEMPLATE_BY_BLOCK[blockHandle] || "index";
+  const config = BLOCK_CONFIG[blockHandle];
+  if (!config) return null;
   const shopHandle = shop.replace(/\.myshopify\.com$/, "");
   const activate = `${TAE_EXTENSION_UID}/${blockHandle}`;
-  const params = new URLSearchParams({
-    context: "apps",
-    template,
-    activateAppId: activate,
-  });
+  const params = new URLSearchParams();
+  if (config.type === "embed") {
+    // App embeds live in the Theme Settings → App embeds panel.
+    params.set("context", "apps");
+  } else {
+    // Sections live inside template editing — point the editor at the
+    // template the block targets so the "Add section" picker is in scope.
+    params.set("template", config.template || "index");
+  }
+  params.set("activateAppId", activate);
   return `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?${params.toString()}`;
 }
 
