@@ -1,8 +1,6 @@
 import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
-import { scanShopifyShop } from "../asva-api.server";
-import db from "../db.server";
+import { loadShopScan } from "../scan-loader.server";
 import {
   Page,
   Layout,
@@ -19,8 +17,6 @@ import {
   Spinner,
 } from "@shopify/polaris";
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-
 const GRADE_TONE = {
   Excellent: "success",
   "Very Good": "info",
@@ -29,59 +25,7 @@ const GRADE_TONE = {
   "Very Poor": "critical",
 };
 
-export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
-  const shop = session.shop;
-
-  // Detect ?rescan=1 → bypass cache for a fresh scan.
-  const url = new URL(request.url);
-  const forceRescan = url.searchParams.get("rescan") === "1";
-
-  // Defensive: NEVER throw from the loader. Any failure surfaces as
-  // { scan: null, loadError: <reason> } so the UI renders a friendly
-  // error card instead of triggering Shopify's auto-fail "Application Error".
-  let scan = null;
-  let cacheHit = false;
-  let loadError = null;
-
-  try {
-    if (!forceRescan) {
-      const cached = await db.scan.findUnique({ where: { shop } });
-      if (cached && Date.now() - cached.createdAt.getTime() < CACHE_TTL_MS) {
-        scan = JSON.parse(cached.scanResponseJson);
-        cacheHit = true;
-      }
-    }
-
-    if (!scan) {
-      // Strip ".myshopify.com" suffix and pass storefront URL.
-      // Backend accepts both with/without the suffix; we send the canonical
-      // shop domain for consistency.
-      const fresh = await scanShopifyShop(shop);
-      scan = fresh;
-      await db.scan.upsert({
-        where: { shop },
-        update: {
-          score: typeof fresh.score === "number" ? Math.round(fresh.score) : null,
-          grade: fresh.grade ?? null,
-          scanResponseJson: JSON.stringify(fresh),
-        },
-        create: {
-          shop,
-          score: typeof fresh.score === "number" ? Math.round(fresh.score) : null,
-          grade: fresh.grade ?? null,
-          scanResponseJson: JSON.stringify(fresh),
-        },
-      });
-    }
-  } catch (err) {
-    loadError = err instanceof Error ? err.message : "Failed to load scan.";
-    // eslint-disable-next-line no-console
-    console.error("[app._index loader] scan failure:", err);
-  }
-
-  return { shop, scan, cacheHit, loadError };
-};
+export const loader = async ({ request }) => loadShopScan(request);
 
 export default function Home() {
   const { shop, scan, cacheHit, loadError } = useLoaderData();
