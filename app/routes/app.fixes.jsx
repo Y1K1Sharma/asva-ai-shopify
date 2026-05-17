@@ -91,16 +91,16 @@ export default function FixesPage() {
         {unlocked && (
           <Banner title="How Apply fix works" tone="info">
             <p>
-              <strong>1-click apply</strong> fixes open the Shopify theme editor with the Asva
-              AI block ready to add. Add the block to your theme, click <strong>Save</strong>{" "}
-              in the theme editor, then return to Asva AI and click <strong>Rescan</strong>{" "}
-              on the Home page. Your score updates after the rescan finishes.
+              Fixes tagged <strong>Theme block available</strong> can be applied via a Shopify
+              theme block. Click <strong>Apply fix</strong> → the theme editor opens in a new
+              tab on the right surface → add the Asva AI block from the picker → click{" "}
+              <strong>Save</strong> in the editor → come back here and click <strong>Rescan</strong>{" "}
+              on the Home page. Your score updates after the rescan completes.
             </p>
             <p>
-              <strong>Manual fix</strong> items need server-side changes
-              (HTTPS, headers, manifest hosting) that the app cannot apply
-              from inside Shopify. Use the description and code snippet
-              below each fix as a reference.
+              Fixes tagged <strong>Manual fix</strong> need server-side changes (HTTPS, HSTS,
+              CORS headers, manifest hosting) that the app can&rsquo;t apply from inside
+              Shopify. Use the description and code snippet below each fix as your reference.
             </p>
           </Banner>
         )}
@@ -249,7 +249,7 @@ function FixCard({ fix, unlocked, index, shop }) {
               {fix.platform && fix.platform !== "custom" && (
                 <Badge tone="info">{fix.platform}</Badge>
               )}
-              {applyUrl && <Badge tone="success">1-click apply</Badge>}
+              {applyUrl && <Badge tone="success">Theme block available</Badge>}
             </InlineStack>
           </BlockStack>
           <Box>

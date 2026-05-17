@@ -122,17 +122,25 @@ export function themeEditorUrlForBlock(shop, blockHandle) {
   const config = BLOCK_CONFIG[blockHandle];
   if (!config) return null;
   const shopHandle = shop.replace(/\.myshopify\.com$/, "");
-  const activate = `${TAE_EXTENSION_UID}/${blockHandle}`;
+
+  // The activateAppId deep-link param is documented but unreliable in
+  // practice (Shopify admin silently strips it when the UID doesn't
+  // resolve, dumping the merchant on a blank screen or the App embeds
+  // panel regardless of intent). We don't depend on it. Instead:
+  //
+  //   section : open editor at the right template — merchant clicks
+  //             + → Apps → Asva block → Save
+  //   embed   : open the Theme Settings → App embeds panel — merchant
+  //             toggles the Asva embed on → Save
+  //
+  // The Fixes-page tooltip and the top-of-page banner spell out the
+  // exact steps so the merchant isn't lost.
   const params = new URLSearchParams();
   if (config.type === "embed") {
-    // App embeds live in the Theme Settings → App embeds panel.
     params.set("context", "apps");
   } else {
-    // Sections live inside template editing — point the editor at the
-    // template the block targets so the "Add section" picker is in scope.
     params.set("template", config.template || "index");
   }
-  params.set("activateAppId", activate);
   return `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?${params.toString()}`;
 }
 
