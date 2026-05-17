@@ -2,7 +2,7 @@
 
 client_id = "1487ab4d9256aa4f5399f984f24cecc6"
 name = "Asva AI"
-application_url = "https://asva-ai-shopify-production.up.railway.app"
+application_url = "https://asva-ai-production.up.railway.app"
 embedded = true
 
 [build]
@@ -50,5 +50,5 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "https://asva-ai-shopify-production.up.railway.app/auth/callback"
+  "https://asva-ai-production.up.railway.app/auth/callback"
 ]
