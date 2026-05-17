@@ -24,6 +24,11 @@ export default function App() {
           <s-link href="/app">Home</s-link>
           <s-link href="/app/checks">All Checks</s-link>
           <s-link href="/app/fixes">Fixes</s-link>
+          <s-link href="/app/catalog">Catalog</s-link>
+          <s-link href="/app/competitive">Competitive</s-link>
+          <s-link href="/app/cross-protocol">Cross-Protocol</s-link>
+          <s-link href="/app/playground">Playground</s-link>
+          <s-link href="/app/settings">Settings</s-link>
         </s-app-nav>
         <Outlet />
       </PolarisAppProvider>
