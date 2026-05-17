@@ -1,6 +1,7 @@
 import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { loadShopScan } from "../scan-loader.server";
+import { usePendingApply } from "../use-pending-apply";
 import {
   Page,
   Layout,
@@ -34,6 +35,7 @@ export default function Home() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isLoading = navigation.state === "loading";
   const shopName = shop.replace(/\.myshopify\.com$/, "");
+  const { pendingApply, clear: clearPending } = usePendingApply();
 
   const handleRescan = () => {
     // Toggle the rescan flag to invalidate cache, then revalidate the route.
@@ -113,6 +115,28 @@ export default function Home() {
       }}
     >
       <BlockStack gap="500">
+        {pendingApply && (
+          <Banner
+            title="Did you save a theme change?"
+            tone="success"
+            action={{
+              content: isLoading ? "Rescanning…" : "Rescan now",
+              onAction: () => {
+                clearPending();
+                handleRescan();
+              },
+              loading: isLoading,
+            }}
+            secondaryAction={{ content: "Not yet", onAction: clearPending }}
+          >
+            <p>
+              Looks like you came back from the theme editor. If you toggled an
+              Asva AI embed on and clicked <strong>Save</strong>, run a fresh
+              scan now to update your score.
+            </p>
+          </Banner>
+        )}
+
         {cacheHit && (
           <Text as="p" variant="bodySm" tone="subdued">
             Showing cached result. Click Rescan for fresh data.

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useLoaderData, useRouteError } from "react-router";
+import { useLoaderData, useNavigate, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { loadShopScan } from "../scan-loader.server";
 import {
@@ -20,6 +20,7 @@ import {
 } from "@shopify/polaris";
 import { SEVERITY_TONE, SEVERITIES, scanIsUnlocked } from "../scan-utils";
 import { applyFixUrl, blockForCheckId, blockTypeFor } from "../tae-fix-map";
+import { usePendingApply, markPendingApply } from "../use-pending-apply";
 
 export const loader = async ({ request }) => loadShopScan(request);
 
@@ -48,6 +49,13 @@ const SEVERITY_FILTER_OPTIONS = [
 
 export default function FixesPage() {
   const { scan, cacheHit, loadError, shop } = useLoaderData();
+  const navigate = useNavigate();
+  const { pendingApply, clear: clearPending } = usePendingApply();
+
+  const handleRescanNow = () => {
+    clearPending();
+    navigate("/app?rescan=1");
+  };
 
   if (loadError) {
     return (
@@ -73,6 +81,20 @@ export default function FixesPage() {
       }
     >
       <BlockStack gap="400">
+        {pendingApply && (
+          <Banner
+            title="Did you save a theme change?"
+            tone="success"
+            action={{ content: "Rescan now", onAction: handleRescanNow }}
+            secondaryAction={{ content: "Not yet", onAction: clearPending }}
+          >
+            <p>
+              Looks like you came back from the theme editor. If you toggled an
+              Asva AI embed on and clicked <strong>Save</strong>, run a fresh
+              scan to update your score. Takes ~30 seconds.
+            </p>
+          </Banner>
+        )}
         {cacheHit && (
           <Text as="p" variant="bodySm" tone="subdued">
             Showing cached result. Click Rescan on the Home page for fresh data.
@@ -262,6 +284,7 @@ function FixCard({ fix, unlocked, index, shop }) {
                   variant="primary"
                   url={applyUrl}
                   external
+                  onClick={markPendingApply}
                   accessibilityLabel={`Apply fix: ${fix.title}`}
                 >
                   Apply fix
