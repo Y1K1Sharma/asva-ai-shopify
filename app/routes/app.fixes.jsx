@@ -222,7 +222,7 @@ function FixCard({ fix, unlocked, index, shop }) {
           </BlockStack>
           <Box>
             {applyUrl ? (
-              <Tooltip content="Opens the theme editor with the Asva AI block ready to add. Click Save in the editor to publish.">
+              <Tooltip content="Opens the theme editor on the Apps tab. Find the Asva AI block in the list, drag it onto the page, then click Save.">
                 <Button
                   variant="primary"
                   url={applyUrl}

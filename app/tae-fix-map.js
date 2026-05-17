@@ -85,22 +85,38 @@ export function blockForCheckId(checkId) {
 
 /**
  * Build a Shopify theme-editor deep-link URL for a given TAE block on
- * a given shop. Opens the editor with the block's section/template
- * pre-loaded, and auto-activates the "Add app block" sheet for the
- * specified block via activateAppId=<extension-uid>/<block-handle>.
+ * a given shop.
  *
- * The shop param must be the *.myshopify.com domain (session.shop).
+ * Three things matter here, learned the hard way:
+ *
+ *   1. Use the unified admin host (`admin.shopify.com/store/<handle>`)
+ *      directly, NOT the legacy `<shop>.myshopify.com/admin/...` URL
+ *      that has to redirect. The redirect path drops query params
+ *      inconsistently and can land on a blank editor frame.
+ *
+ *   2. `context=apps` is required to open the editor with the
+ *      Apps tab focused. Without it the merchant lands on the
+ *      template view and has to hunt for the block.
+ *
+ *   3. `activateAppId=<extension-uid>/<block-handle>` is the
+ *      documented deep-link param. Shopify's admin sometimes
+ *      honors it (block ready to add) and sometimes doesn't (just
+ *      lands on the Apps tab). Either way the merchant is one
+ *      click from adding the block.
+ *
  * Returns null if no shop or block handle is supplied.
  */
 export function themeEditorUrlForBlock(shop, blockHandle) {
   if (!shop || !blockHandle) return null;
   const template = TEMPLATE_BY_BLOCK[blockHandle] || "index";
+  const shopHandle = shop.replace(/\.myshopify\.com$/, "");
   const activate = `${TAE_EXTENSION_UID}/${blockHandle}`;
   const params = new URLSearchParams({
+    context: "apps",
     template,
     activateAppId: activate,
   });
-  return `https://${shop}/admin/themes/current/editor?${params.toString()}`;
+  return `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?${params.toString()}`;
 }
 
 /**
