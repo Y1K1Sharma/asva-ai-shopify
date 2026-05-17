@@ -1,0 +1,97 @@
+{% comment %}
+  Asva AI — Bot allow-list app block.
+
+  Outputs an inline JSON manifest declaring which AI agents this store
+  has explicitly opted into. Agents that read this can short-circuit
+  their robots.txt + UCP discovery flow and trust this site is
+  agent-ready.
+
+  This is a small belt-and-suspenders signal — agents primarily use
+  robots.txt and UCP manifest. Use this block when you want to be
+  explicit about which agents you support.
+{% endcomment %}
+
+{%- assign allowed_bots = '' -%}
+{%- if block.settings.allow_gptbot -%}{%- assign allowed_bots = allowed_bots | append: '"GPTBot",' -%}{%- endif -%}
+{%- if block.settings.allow_oai_searchbot -%}{%- assign allowed_bots = allowed_bots | append: '"OAI-SearchBot",' -%}{%- endif -%}
+{%- if block.settings.allow_chatgpt_user -%}{%- assign allowed_bots = allowed_bots | append: '"ChatGPT-User",' -%}{%- endif -%}
+{%- if block.settings.allow_perplexitybot -%}{%- assign allowed_bots = allowed_bots | append: '"PerplexityBot",' -%}{%- endif -%}
+{%- if block.settings.allow_claudebot -%}{%- assign allowed_bots = allowed_bots | append: '"ClaudeBot",' -%}{%- endif -%}
+{%- if block.settings.allow_google_extended -%}{%- assign allowed_bots = allowed_bots | append: '"Google-Extended",' -%}{%- endif -%}
+{%- if block.settings.allow_applebot_extended -%}{%- assign allowed_bots = allowed_bots | append: '"Applebot-Extended",' -%}{%- endif -%}
+{%- assign allowed_bots = allowed_bots | replace_last: ',', '' -%}
+
+{%- if allowed_bots != blank -%}
+  <script type="application/ld+json" data-asva="bot-allowlist">
+  {
+    "@context": "https://asvaai.com/schemas/bot-allowlist",
+    "@type": "BotAllowList",
+    "allows": [{{ allowed_bots }}],
+    "store": {{ shop.name | json }},
+    "url": {{ shop.url | json }}
+  }
+  </script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Bot allow-list (Asva AI)",
+  "target": "head",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Declare which AI agents your store has explicitly opted into. Agents read this signal alongside robots.txt and the UCP manifest. All defaults are recommended."
+    },
+    {
+      "type": "header",
+      "content": "OpenAI agents"
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_gptbot",
+      "label": "GPTBot (training crawl)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_oai_searchbot",
+      "label": "OAI-SearchBot (search index)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_chatgpt_user",
+      "label": "ChatGPT-User (live browsing)",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Other agents"
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_perplexitybot",
+      "label": "PerplexityBot",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_claudebot",
+      "label": "ClaudeBot",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_google_extended",
+      "label": "Google-Extended (Gemini)",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "allow_applebot_extended",
+      "label": "Applebot-Extended (Apple Intelligence)",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

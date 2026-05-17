@@ -19,6 +19,7 @@ import {
   Tooltip,
 } from "@shopify/polaris";
 import { SEVERITY_TONE, SEVERITIES, scanIsUnlocked } from "../scan-utils";
+import { applyFixUrl } from "../tae-fix-map";
 
 export const loader = async ({ request }) => loadShopScan(request);
 
@@ -87,13 +88,13 @@ export default function FixesPage() {
             </p>
           </Banner>
         )}
-        <FixList fixes={allFixes} unlocked={unlocked} />
+        <FixList fixes={allFixes} unlocked={unlocked} shop={shop} />
       </BlockStack>
     </Page>
   );
 }
 
-function FixList({ fixes, unlocked }) {
+function FixList({ fixes, unlocked, shop }) {
   const [sort, setSort] = useState("impact_desc");
   const [severity, setSeverity] = useState("");
   const [q, setQ] = useState("");
@@ -179,17 +180,18 @@ function FixList({ fixes, unlocked }) {
       </Card>
 
       {filtered.map((fix, i) => (
-        <FixCard key={(fix.check_id || "") + i} fix={fix} unlocked={unlocked} index={i + 1} />
+        <FixCard key={(fix.check_id || "") + i} fix={fix} unlocked={unlocked} index={i + 1} shop={shop} />
       ))}
     </BlockStack>
   );
 }
 
-function FixCard({ fix, unlocked, index }) {
+function FixCard({ fix, unlocked, index, shop }) {
   const [open, setOpen] = useState(false);
   const sevTone = SEVERITY_TONE[fix.severity];
   const effortTone = EFFORT_TONE[fix.effort];
   const hasCode = Boolean(fix.code_snippet);
+  const applyUrl = applyFixUrl(fix, shop);
 
   return (
     <Card>
@@ -215,18 +217,32 @@ function FixCard({ fix, unlocked, index }) {
               {fix.platform && fix.platform !== "custom" && (
                 <Badge tone="info">{fix.platform}</Badge>
               )}
+              {applyUrl && <Badge tone="success">1-click apply</Badge>}
             </InlineStack>
           </BlockStack>
           <Box>
-            <Tooltip content="Apply fix is wired in a later phase. For now this opens the expanded details.">
-              <Button
-                variant="primary"
-                disabled
-                accessibilityLabel="Apply fix (coming soon)"
-              >
-                Apply fix
-              </Button>
-            </Tooltip>
+            {applyUrl ? (
+              <Tooltip content="Opens the theme editor with the Asva AI block ready to add. Click Save in the editor to publish.">
+                <Button
+                  variant="primary"
+                  url={applyUrl}
+                  external
+                  accessibilityLabel={`Apply fix: ${fix.title}`}
+                >
+                  Apply fix
+                </Button>
+              </Tooltip>
+            ) : (
+              <Tooltip content="No 1-click app block for this fix yet. Follow the description / code snippet below to apply manually.">
+                <Button
+                  variant="primary"
+                  disabled
+                  accessibilityLabel="Manual fix — see description"
+                >
+                  Manual fix
+                </Button>
+              </Tooltip>
+            )}
           </Box>
         </InlineStack>
 

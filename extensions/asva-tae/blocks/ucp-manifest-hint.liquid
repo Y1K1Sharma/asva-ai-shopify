@@ -1,0 +1,51 @@
+{% comment %}
+  Asva AI — UCP manifest discovery hint app block.
+
+  Public-distribution apps cannot write to /.well-known/ucp directly
+  (Asset API requires Protected Scope Exemption — see
+  reference_shopify_asset_api_gate.md). As a v1 stopgap, this block
+  publishes a discovery hint:
+
+    1. <link rel="ucp-manifest" href="..."> — a discovery anchor
+       agents can find from any page on the storefront.
+    2. <meta name="ucp:version" ...> — agent-readable version pin.
+
+  The actual /.well-known/ucp endpoint is best served via:
+    a. Shopify CLI flag (admin/online store/files upload)
+    b. Future v2 Asset API write once exemption lands
+    c. Cloudflare worker / DNS-attached service for non-Shopify hosts
+
+  Merchant fills in their hosted manifest URL via block settings.
+{% endcomment %}
+
+{%- if block.settings.manifest_url != blank -%}
+  <link rel="ucp-manifest" href="{{ block.settings.manifest_url }}">
+  {%- if block.settings.ucp_version != blank %}
+    <meta name="ucp:version" content="{{ block.settings.ucp_version }}">
+  {%- endif -%}
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "UCP manifest hint (Asva AI)",
+  "target": "head",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Publishes a discovery hint pointing AI agents at your /.well-known/ucp manifest. You still need to host the manifest itself — paste its full URL below."
+    },
+    {
+      "type": "url",
+      "id": "manifest_url",
+      "label": "Manifest URL",
+      "info": "e.g. https://yourstore.com/.well-known/ucp"
+    },
+    {
+      "type": "text",
+      "id": "ucp_version",
+      "label": "UCP version (optional)",
+      "default": "2026-04-08"
+    }
+  ]
+}
+{% endschema %}

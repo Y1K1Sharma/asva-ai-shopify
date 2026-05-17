@@ -1,0 +1,87 @@
+{% comment %}
+  Asva AI — Organization Schema.org JSON-LD app block.
+
+  Adds Schema.org/Organization structured data to your storefront. AI
+  agents use this to identify the brand, find official social/contact
+  channels, and verify authoritativeness when answering "where can I
+  buy X" queries.
+
+  Pick up shop name + logo + domain from the shop object; let the
+  merchant override social links via block settings.
+{% endcomment %}
+
+{%- assign social_profiles = '' -%}
+{%- if block.settings.facebook_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.facebook_url | append: '",' -%}{%- endif -%}
+{%- if block.settings.instagram_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.instagram_url | append: '",' -%}{%- endif -%}
+{%- if block.settings.twitter_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.twitter_url | append: '",' -%}{%- endif -%}
+{%- if block.settings.linkedin_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.linkedin_url | append: '",' -%}{%- endif -%}
+{%- if block.settings.tiktok_url != blank -%}{%- assign social_profiles = social_profiles | append: '"' | append: block.settings.tiktok_url | append: '",' -%}{%- endif -%}
+{%- assign social_profiles = social_profiles | replace_last: ',', '' -%}
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": {{ shop.name | json }},
+  "url": {{ shop.url | json }}{% if shop.brand.square_logo %},
+  "logo": "https:{{ shop.brand.square_logo | image_url: width: 512 }}"{% elsif shop.brand.logo %},
+  "logo": "https:{{ shop.brand.logo | image_url: width: 512 }}"{% endif %}{% if block.settings.legal_name != blank %},
+  "legalName": {{ block.settings.legal_name | json }}{% endif %}{% if block.settings.contact_email != blank %},
+  "email": {{ block.settings.contact_email | json }}{% endif %}{% if social_profiles != blank %},
+  "sameAs": [{{ social_profiles }}]{% endif %}
+}
+</script>
+
+{% schema %}
+{
+  "name": "Organization JSON-LD (Asva AI)",
+  "target": "section",
+  "templates": ["index"],
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Adds Schema.org/Organization structured data to your homepage. Helps AI agents identify your brand. Add your social URLs below — agents use these to verify the brand is authoritative."
+    },
+    {
+      "type": "text",
+      "id": "legal_name",
+      "label": "Legal company name (optional)",
+      "info": "e.g. Asva Technologies Pvt. Ltd."
+    },
+    {
+      "type": "email",
+      "id": "contact_email",
+      "label": "Public contact email (optional)"
+    },
+    {
+      "type": "header",
+      "content": "Social profiles (optional)"
+    },
+    {
+      "type": "url",
+      "id": "facebook_url",
+      "label": "Facebook URL"
+    },
+    {
+      "type": "url",
+      "id": "instagram_url",
+      "label": "Instagram URL"
+    },
+    {
+      "type": "url",
+      "id": "twitter_url",
+      "label": "X / Twitter URL"
+    },
+    {
+      "type": "url",
+      "id": "linkedin_url",
+      "label": "LinkedIn URL"
+    },
+    {
+      "type": "url",
+      "id": "tiktok_url",
+      "label": "TikTok URL"
+    }
+  ]
+}
+{% endschema %}

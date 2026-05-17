@@ -1,0 +1,9 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Asva AI agentic-readiness blocks"
+handle = "asva-ai-tae"
+type = "theme"
+
+[extensions.capabilities]
+block_progress = true
