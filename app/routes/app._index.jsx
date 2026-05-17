@@ -99,6 +99,7 @@ export default function Home() {
     total: 0,
   };
   const topFixes = Array.isArray(scan.top_5_fixes) ? scan.top_5_fixes : [];
+  const gated = detectStorefrontGated(scan);
 
   return (
     <Page
@@ -116,6 +117,24 @@ export default function Home() {
           <Text as="p" variant="bodySm" tone="subdued">
             Showing cached result. Click Rescan for fresh data.
           </Text>
+        )}
+
+        {gated && (
+          <Banner title="Your storefront is currently password-protected" tone="warning">
+            <p>
+              The audit can&rsquo;t reach your live storefront — it&rsquo;s being redirected
+              to your password gate page. Until the store is publicly accessible, this score
+              reflects what AI agents see <em>at the gate</em>, not the real readiness of
+              your store.
+            </p>
+            <p>
+              If this is a development store, password protection is enforced and can&rsquo;t
+              be turned off until you upgrade to a paid plan. Test the Apply Fix flow on
+              <strong> Theme Settings → App embeds</strong> (the embeds are working — only the
+              audit is blocked) and your score will populate correctly once the store goes
+              public.
+            </p>
+          </Banner>
         )}
 
         {/* Score / counters / manifest row */}
@@ -317,6 +336,44 @@ function FixRow({ fix, index }) {
       </BlockStack>
     </InlineStack>
   );
+}
+
+// Detect "the storefront is gated" state from the scan response.
+//
+// Symptoms when password-protection (or a Cloudflare WAF, or a 401
+// origin) blocks the audit:
+//
+//   - bot-live-probe-non-200 fails — bot UA got a non-200 from the
+//     storefront homepage
+//   - bot-robots-txt-exists either warns with detail "http_403" or
+//     fails outright — robots.txt couldn't be fetched
+//   - platform_detected falls back to "Custom / Headless" because
+//     the audit can't find Shopify markers in the (gated) HTML
+//
+// Any one of these is a strong signal, but we require two for low
+// false-positive risk — e.g. genuinely-headless stores legitimately
+// return "Custom / Headless" without being gated.
+function detectStorefrontGated(scan) {
+  if (!scan) return false;
+  const checks = Array.isArray(scan.checks) ? scan.checks : [];
+  const findCheck = (id) => checks.find((c) => c?.id === id);
+  const liveProbe = findCheck("bot-live-probe-non-200");
+  const robotsCheck = findCheck("bot-robots-txt-exists");
+  const probeBad = liveProbe && (liveProbe.status === "fail" || liveProbe.status === "warn");
+  const robotsBad =
+    robotsCheck &&
+    (robotsCheck.status === "fail" ||
+      (robotsCheck.status === "warn" &&
+        typeof robotsCheck.detail === "string" &&
+        robotsCheck.detail.includes("403")));
+  const platformUnknown =
+    !scan.platform_detected ||
+    scan.platform_detected === "Custom / Headless" ||
+    scan.platform_detected === "—";
+  // Two-signal requirement: bot/robots fetch is failing AND platform
+  // detection bailed out. That rules out a real headless commerce
+  // store that simply lacks Shopify markers.
+  return Boolean((probeBad || robotsBad) && platformUnknown);
 }
 
 export const headers = (headersArgs) => {
