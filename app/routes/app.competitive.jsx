@@ -94,10 +94,15 @@ export const loader = async ({ request }) => {
 export default function CompetitivePage() {
   const { shop, selfScan, competitor, competitorScan, loadError } = useLoaderData();
   const navigation = useNavigation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isLoading = navigation.state === "loading";
   const shopName = shop.replace(/\.myshopify\.com$/, "");
   const [input, setInput] = useState(competitor || "");
+
+  const handleClear = () => {
+    setInput("");
+    setSearchParams({});
+  };
 
   return (
     <Page
@@ -119,7 +124,7 @@ export default function CompetitivePage() {
                     label="Competitor domain"
                     labelHidden
                     name="competitor"
-                    placeholder="allbirds.com"
+                    placeholder="brand.com"
                     value={input}
                     onChange={setInput}
                     autoComplete="off"
@@ -129,7 +134,7 @@ export default function CompetitivePage() {
                   Scan competitor
                 </Button>
                 {competitor && (
-                  <Button url="/app/competitive" variant="plain">
+                  <Button variant="plain" onClick={handleClear}>
                     Clear
                   </Button>
                 )}

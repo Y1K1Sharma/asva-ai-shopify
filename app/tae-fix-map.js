@@ -1,18 +1,22 @@
 /**
  * Maps backend check IDs to Theme App Extension block handles. When a
  * fix maps to a block, the "Apply fix" button in /app/fixes deep-links
- * the merchant into the theme editor with that block pre-selected.
+ * the merchant into the theme editor with that block pre-selected via
+ * the `activateAppId=<uid>/<block>` query param.
  *
- * Backed by the TAE handle declared in extensions/asva-tae/shopify.extension.toml
- * (handle = "asva-ai-tae"). Block handles match the filenames under
- * extensions/asva-tae/blocks/* without the .liquid extension.
+ * Per Shopify docs, `activateAppId` requires the extension's UID (not
+ * its handle). UID is stable across deploys once Shopify CLI generates
+ * it on first deploy — it's stored in extensions/asva-tae/shopify.extension.toml.
  *
  * If a fix is NOT in this map, the Apply button stays disabled and the
  * tooltip says "Manual fix — see description". Adding more blocks
  * is purely a TAE work item: ship the block, then add a mapping here.
  */
 
-export const TAE_APP_HANDLE = "asva-ai-tae";
+// UID from extensions/asva-tae/shopify.extension.toml. Updated when
+// the TAE is re-created (rare). If the deep-link stops surfacing the
+// block, verify this matches the live `uid` in the toml.
+export const TAE_EXTENSION_UID = "481f0e81-a8fa-e1ba-936c-c5839f1dcf13881b2d0d";
 
 // Block targets (where the editor surface drops the block).
 // Used to pick the right `template=` query param when deep-linking.
@@ -28,25 +32,44 @@ const TEMPLATE_BY_BLOCK = {
  * check_ids (the keys in scan.fixes[].check_id) to the TAE block that
  * fixes them.
  *
- * Curated from the public_scan check catalog. Add more as we ship more
- * blocks.
+ * v1 coverage notes (be honest about what this can and can't do):
+ *   - JSON-LD fixes  →  product-jsonld / organization-jsonld  (handled)
+ *   - Bot-readiness  →  bot-allowlist                          (handled)
+ *   - UCP manifest writes → require Asset API + Protected Scope
+ *     Exemption (not granted to v1 Public-distribution apps).
+ *     ucp-manifest-hint is a discovery anchor only; merchant still
+ *     hosts the manifest themselves.
+ *   - Server-config fixes (HTTPS, HSTS, sitemap.xml, CORS) are either
+ *     Shopify-platform-controlled (false positives) or require server
+ *     access we don't have.
+ *   - Product-data fixes (descriptions, images, variants) are merchant
+ *     content decisions; we link to the product editor via the Catalog
+ *     page instead.
  */
 const CHECK_TO_BLOCK = {
-  // Product JSON-LD
+  // Product JSON-LD — every product-schema-related check
   "discovery-product-schema": "product-jsonld",
   "ai-google-merchant-product-schema": "product-jsonld",
   "product-structured-data": "product-jsonld",
 
-  // Organization JSON-LD on homepage
+  // Organization JSON-LD on homepage — both Organization-flavored and
+  // generic Schema.org-on-homepage checks share the same block.
   "discovery-organization-schema": "organization-jsonld",
+  "discovery-schema-org-jsonld": "organization-jsonld",
   "schema-org-json-ld": "organization-jsonld",
   "ai-organization-schema": "organization-jsonld",
 
-  // UCP manifest hint (discovery anchor — does not write the manifest itself)
+  // UCP manifest discovery hint — adds <link rel="ucp-manifest">.
+  // Does NOT host the manifest itself (Asset API gate).
   "discovery-ucp-manifest-link": "ucp-manifest-hint",
   "manifest-discoverable": "ucp-manifest-hint",
 
-  // Bot allow-list
+  // Bot allow-list — every AI-platform-readiness check + per-bot ones.
+  "ai-perplexity-readiness": "bot-allowlist",
+  "ai-claude-readiness": "bot-allowlist",
+  "ai-gpt-readiness": "bot-allowlist",
+  "ai-gemini-readiness": "bot-allowlist",
+  "ai-apple-intelligence-readiness": "bot-allowlist",
   "gptbot-allowed": "bot-allowlist",
   "oai-searchbot-allowed": "bot-allowlist",
   "chatgpt-user-allowed": "bot-allowlist",
@@ -63,18 +86,19 @@ export function blockForCheckId(checkId) {
 /**
  * Build a Shopify theme-editor deep-link URL for a given TAE block on
  * a given shop. Opens the editor with the block's section/template
- * pre-loaded, and (when supported by the host) auto-activates the
- * "Add app block" sheet for asva-ai-tae/{block}.
+ * pre-loaded, and auto-activates the "Add app block" sheet for the
+ * specified block via activateAppId=<extension-uid>/<block-handle>.
  *
- * URL format follows the documented theme-editor query-string contract.
+ * The shop param must be the *.myshopify.com domain (session.shop).
+ * Returns null if no shop or block handle is supplied.
  */
 export function themeEditorUrlForBlock(shop, blockHandle) {
   if (!shop || !blockHandle) return null;
   const template = TEMPLATE_BY_BLOCK[blockHandle] || "index";
-  const handle = `${TAE_APP_HANDLE}/${blockHandle}`;
+  const activate = `${TAE_EXTENSION_UID}/${blockHandle}`;
   const params = new URLSearchParams({
     template,
-    activateAppId: handle,
+    activateAppId: activate,
   });
   return `https://${shop}/admin/themes/current/editor?${params.toString()}`;
 }

@@ -1,4 +1,4 @@
-import { useLoaderData, useRouteError } from "react-router";
+import { useLoaderData, useNavigate, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { scanIsUnlocked } from "../scan-utils";
@@ -62,6 +62,7 @@ export const loader = async ({ request }) => {
 
 export default function SettingsPage() {
   const { shop, cacheMeta, backendUnlocked, appConfigured } = useLoaderData();
+  const navigate = useNavigate();
   const shopName = shop.replace(/\.myshopify\.com$/, "");
 
   return (
@@ -135,7 +136,10 @@ export default function SettingsPage() {
                   </InlineStack>
                 </InlineStack>
                 <Box paddingBlockStart="200">
-                  <Button url="/app?rescan=1" variant="primary">
+                  <Button
+                    variant="primary"
+                    onClick={() => navigate("/app?rescan=1")}
+                  >
                     Force fresh scan
                   </Button>
                 </Box>

@@ -1,4 +1,5 @@
 api_version = "2026-04"
+uid = "481f0e81-a8fa-e1ba-936c-c5839f1dcf13881b2d0d"
 
 [[extensions]]
 name = "Asva AI agentic-readiness blocks"
