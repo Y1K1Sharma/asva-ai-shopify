@@ -1,0 +1,237 @@
+/* ─── Layout shell ───────────────────────────────────────────────── */
+
+.page {
+  min-height: 100vh;
+  background: #f6f6f7;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  color: #202223;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  background: #ffffff;
+  border-bottom: 1px solid #e1e3e5;
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #000;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.brand {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #202223;
+}
+
+.main {
+  flex: 1;
+  max-width: 980px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 56px 32px 80px;
+  text-align: center;
+}
+
+.eyebrow {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5c5f62;
+  background: #ebebed;
+  border-radius: 999px;
+  padding: 6px 12px;
+  margin-bottom: 24px;
+}
+
+/* ─── Hero copy ───────────────────────────────────────────────────── */
+
+.heading {
+  font-size: clamp(32px, 5vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  margin: 0 0 16px;
+  color: #1a1a1a;
+}
+
+.text {
+  font-size: 17px;
+  line-height: 1.5;
+  color: #5c5f62;
+  max-width: 640px;
+  margin: 0 auto 40px;
+}
+
+/* ─── Install CTA card (no shop-domain input per Shopify §2.3.1) ─── */
+
+.ctaCard {
+  background: #ffffff;
+  border: 1px solid #e1e3e5;
+  border-radius: 16px;
+  padding: 32px;
+  max-width: 520px;
+  margin: 0 auto 56px;
+  text-align: center;
+  box-shadow: 0 1px 0 rgba(22, 29, 37, 0.05);
+}
+
+.ctaHeading {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #1a1a1a;
+  margin: 0 0 8px;
+}
+
+.ctaSubhead {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #5c5f62;
+  margin: 0 0 20px;
+}
+
+.ctaButton {
+  display: inline-block;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: #ffffff;
+  background: #1a1a1a;
+  border: 1px solid #1a1a1a;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background 120ms ease, transform 80ms ease;
+}
+
+.ctaButton:hover {
+  background: #303030;
+}
+
+.ctaButton:active {
+  transform: translateY(1px);
+}
+
+.ctaHint {
+  font-size: 13px;
+  color: #6d7175;
+  margin: 20px 0 0;
+}
+
+.ctaHint strong {
+  color: #202223;
+  font-weight: 600;
+}
+
+/* ─── Feature grid ───────────────────────────────────────────────── */
+
+.featureGrid {
+  list-style: none;
+  padding: 0;
+  margin: 56px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  text-align: left;
+}
+
+.featureItem {
+  background: #ffffff;
+  border: 1px solid #e1e3e5;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.featureNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #f1f1f2;
+  color: #5c5f62;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  margin-bottom: 14px;
+  letter-spacing: -0.02em;
+}
+
+.featureTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0 0 8px;
+}
+
+.featureBody {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #5c5f62;
+  margin: 0;
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────── */
+
+.footer {
+  border-top: 1px solid #e1e3e5;
+  padding: 24px 32px;
+  text-align: center;
+  font-size: 12px;
+  color: #6d7175;
+  background: #ffffff;
+}
+
+.footerLink {
+  color: #1a1a1a;
+  text-decoration: none;
+  font-weight: 500;
+  margin: 0 8px;
+}
+
+.footerLink:hover {
+  text-decoration: underline;
+}
+
+/* ─── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .header {
+    padding: 14px 20px;
+  }
+  .main {
+    padding: 40px 20px 60px;
+  }
+  .ctaCard {
+    padding: 24px 20px;
+  }
+  .ctaButton {
+    width: 100%;
+  }
+  .featureGrid {
+    grid-template-columns: 1fr;
+  }
+  .footer {
+    padding: 20px;
+  }
+}
