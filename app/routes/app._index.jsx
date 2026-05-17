@@ -2,6 +2,7 @@ import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchP
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { loadShopScan } from "../scan-loader.server";
 import { usePendingApply } from "../use-pending-apply";
+import { useOnboarding } from "../use-onboarding";
 import {
   Page,
   Layout,
@@ -36,6 +37,11 @@ export default function Home() {
   const isLoading = navigation.state === "loading";
   const shopName = shop.replace(/\.myshopify\.com$/, "");
   const { pendingApply, clear: clearPending } = usePendingApply();
+  const { showOnboarding, dismiss: dismissOnboarding } = useOnboarding();
+  // Deep-link to the embedded admin's Theme Settings → App embeds panel.
+  // Built from the merchant's shop handle so it lands on the right store.
+  const shopHandle = shop.replace(/\.myshopify\.com$/, "");
+  const appEmbedsUrl = `https://admin.shopify.com/store/${shopHandle}/themes/current/editor?context=apps`;
 
   const handleRescan = () => {
     // Toggle the rescan flag to invalidate cache, then revalidate the route.
@@ -115,6 +121,50 @@ export default function Home() {
       }}
     >
       <BlockStack gap="500">
+        {showOnboarding && (
+          <Card>
+            <BlockStack gap="300">
+              <Text as="h2" variant="headingMd">
+                Welcome to Asva AI — 3 steps to enable agent-readiness on your store
+              </Text>
+              <Text as="p" variant="bodyMd">
+                Asva AI ships with Theme App Extension embeds that emit
+                Schema.org structured data and AI bot signals from your
+                storefront. Turn them on in your theme to start passing the
+                most-impactful checks below.
+              </Text>
+              <BlockStack gap="200">
+                <Text as="p" variant="bodyMd">
+                  <strong>1.</strong> Open your theme editor → <strong>Theme Settings</strong> → <strong>App embeds</strong>.
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  <strong>2.</strong> Toggle <strong>Org JSON-LD (Asva AI)</strong> and{" "}
+                  <strong>Product JSON-LD (Asva AI)</strong> ON. Click <strong>Save</strong> in the theme editor.
+                </Text>
+                <Text as="p" variant="bodyMd">
+                  <strong>3.</strong> Return here and click <strong>Rescan</strong>. Your score updates ~30 seconds later
+                  to reflect the new signals on your homepage and product pages.
+                </Text>
+              </BlockStack>
+              <InlineStack gap="200">
+                <Button
+                  url={appEmbedsUrl}
+                  external
+                  variant="primary"
+                >
+                  Open App embeds in theme editor
+                </Button>
+                <Button onClick={dismissOnboarding} variant="plain">
+                  Got it, dismiss
+                </Button>
+              </InlineStack>
+              <Text as="p" variant="bodySm" tone="subdued">
+                You can re-open these instructions anytime from the Settings page.
+              </Text>
+            </BlockStack>
+          </Card>
+        )}
+
         {pendingApply && (
           <Banner
             title="Did you save a theme change?"

@@ -64,6 +64,16 @@ export default function SettingsPage() {
   const { shop, cacheMeta, backendUnlocked, appConfigured } = useLoaderData();
   const navigate = useNavigate();
   const shopName = shop.replace(/\.myshopify\.com$/, "");
+  // Reopen the dismissed first-run onboarding card by clearing the
+  // localStorage flag and bouncing back to Home where it renders.
+  const reopenOnboarding = () => {
+    try {
+      localStorage.removeItem("asva-onboarding-dismissed");
+    } catch {
+      /* ignore */
+    }
+    navigate("/app");
+  };
 
   return (
     <Page title="Settings" subtitle="Diagnostics, configuration status, and support.">
@@ -153,6 +163,23 @@ export default function SettingsPage() {
               Scans are cached for 24 hours to keep your store fast. Use Force
               fresh scan to bypass the cache.
             </Text>
+          </BlockStack>
+        </Card>
+
+        <Card>
+          <BlockStack gap="200">
+            <Text as="h2" variant="headingSm">Getting started</Text>
+            <Divider />
+            <Text as="p" variant="bodyMd">
+              Reopen the welcome guide that walks you through enabling the
+              Asva AI theme embeds (Org JSON-LD, Product JSON-LD, Bot
+              allow-list, UCP discovery hint).
+            </Text>
+            <Box paddingBlockStart="100">
+              <Button onClick={reopenOnboarding}>
+                Show the welcome guide
+              </Button>
+            </Box>
           </BlockStack>
         </Card>
 
