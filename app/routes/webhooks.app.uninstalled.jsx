@@ -11,6 +11,8 @@ export const action = async ({ request }) => {
   if (session) {
     await db.session.deleteMany({ where: { shop } });
   }
+  // Always clear the cached scan for this shop (idempotent — no-op if absent).
+  await db.scan.deleteMany({ where: { shop } });
 
   return new Response();
 };

@@ -32,3 +32,15 @@ model Session {
   refreshToken        String?
   refreshTokenExpires DateTime?
 }
+
+// Cached agentic-readiness scan response for a shop. Keyed by shop domain
+// (one row per shop, upserted on rescan). Loader checks createdAt > now-24h
+// before falling through to a fresh backend call.
+model Scan {
+  shop             String   @id
+  score            Int?
+  grade            String?
+  scanResponseJson String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

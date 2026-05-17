@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import db from "../db.server";
 
 export const action = async ({ request }) => {
     if (request.method !== "POST") {
@@ -22,13 +23,21 @@ export const action = async ({ request }) => {
         return new Response("Unauthorized", { status: 401 });
     }
 
+    let shopDomain = null;
     try {
         const payload = JSON.parse(body);
-        console.log("Received shop/redact for shop:", payload.shop_domain);
+        shopDomain = payload.shop_domain || null;
+        console.log("Received shop/redact for shop:", shopDomain);
     } catch (e) {
         console.error("Failed to parse JSON body:", e);
     }
 
-    // Return exactly 200 for successful receipt
+    // GDPR: wipe any data we still hold for this shop. We only store
+    // session + cached scan response — both are removed here.
+    if (shopDomain) {
+        await db.session.deleteMany({ where: { shop: shopDomain } }).catch(() => {});
+        await db.scan.deleteMany({ where: { shop: shopDomain } }).catch(() => {});
+    }
+
     return new Response("OK", { status: 200 });
 };
