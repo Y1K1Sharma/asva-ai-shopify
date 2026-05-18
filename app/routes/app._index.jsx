@@ -194,19 +194,40 @@ export default function Home() {
         )}
 
         {gated && (
-          <Banner title="Your storefront is currently password-protected" tone="warning">
+          <Banner
+            title="Audit couldn't detect your structured data"
+            tone="warning"
+            action={{
+              content: "View your storefront source",
+              url: `https://${shop}`,
+              external: true,
+            }}
+          >
             <p>
-              The audit can&rsquo;t reach your live storefront — it&rsquo;s being redirected
-              to your password gate page. Until the store is publicly accessible, this score
-              reflects what AI agents see <em>at the gate</em>, not the real readiness of
-              your store.
+              The audit fetched your storefront but didn&rsquo;t find the Schema.org
+              JSON-LD on the homepage. Three reasons this usually happens:
             </p>
             <p>
-              If this is a development store, password protection is enforced and can&rsquo;t
-              be turned off until you upgrade to a paid plan. Test the Apply Fix flow on
-              <strong> Theme Settings → App embeds</strong> (the embeds are working — only the
-              audit is blocked) and your score will populate correctly once the store goes
-              public.
+              <strong>1. Your store is password-protected</strong> — common on Shopify
+              development-plan stores where the gate is structurally enforced. Public
+              visitors get redirected to <code>/password</code>.
+            </p>
+            <p>
+              <strong>2. A WAF or bot-protection layer (Cloudflare, etc.)</strong> is
+              blocking the audit&rsquo;s user-agent.
+            </p>
+            <p>
+              <strong>3. You haven&rsquo;t enabled the Asva AI embeds yet.</strong> Open
+              your theme editor → Theme Settings → App embeds → toggle on{" "}
+              <strong>Org JSON-LD (Asva AI)</strong> and <strong>Product JSON-LD (Asva AI)</strong>,
+              then click Save and Rescan.
+            </p>
+            <p>
+              <strong>To verify the embeds are working:</strong> open your storefront
+              homepage source (right-click → View page source → Ctrl+F → search
+              &ldquo;application/ld+json&rdquo;). If the script is in the HTML, the
+              embeds are working — the audit just can&rsquo;t see them due to the gate.
+              Your score will populate correctly once your store is publicly accessible.
             </p>
           </Banner>
         )}
@@ -412,42 +433,42 @@ function FixRow({ fix, index }) {
   );
 }
 
-// Detect "the storefront is gated" state from the scan response.
+// Detect when the audit likely cannot read the merchant's storefront.
 //
-// Symptoms when password-protection (or a Cloudflare WAF, or a 401
-// origin) blocks the audit:
+// Three distinct failure modes share a common signature: the audit's
+// homepage fetch comes back without the structured-data the embeds
+// emit. We surface a single banner that covers all three because the
+// merchant's remediation is the same — check that the store is
+// publicly reachable.
 //
-//   - bot-live-probe-non-200 fails — bot UA got a non-200 from the
-//     storefront homepage
-//   - bot-robots-txt-exists either warns with detail "http_403" or
-//     fails outright — robots.txt couldn't be fetched
-//   - platform_detected falls back to "Custom / Headless" because
-//     the audit can't find Shopify markers in the (gated) HTML
+//   1. Dev-plan password gate — Shopify redirects public bots to
+//      /password. Returns 200 OK with a Shopify-themed gate page (no
+//      JSON-LD, no manifest). Platform may still detect as "Shopify"
+//      because the gate page has Shopify markers.
 //
-// Any one of these is a strong signal, but we require two for low
-// false-positive risk — e.g. genuinely-headless stores legitimately
-// return "Custom / Headless" without being gated.
+//   2. Cloudflare/WAF block — Bot UA gets 403, 429, or non-200.
+//      bot-live-probe-non-200 or bot-robots-txt-exists trips.
+//
+//   3. Genuinely empty/headless — Platform falls back to
+//      "Custom / Headless" and homepage has no JSON-LD.
+//
+// Rather than try to distinguish these, we trigger whenever the
+// JSON-LD detection fails. The banner copy then guides the merchant
+// through the most likely cause and provides a self-verification link.
 function detectStorefrontGated(scan) {
   if (!scan) return false;
   const checks = Array.isArray(scan.checks) ? scan.checks : [];
   const findCheck = (id) => checks.find((c) => c?.id === id);
-  const liveProbe = findCheck("bot-live-probe-non-200");
-  const robotsCheck = findCheck("bot-robots-txt-exists");
-  const probeBad = liveProbe && (liveProbe.status === "fail" || liveProbe.status === "warn");
-  const robotsBad =
-    robotsCheck &&
-    (robotsCheck.status === "fail" ||
-      (robotsCheck.status === "warn" &&
-        typeof robotsCheck.detail === "string" &&
-        robotsCheck.detail.includes("403")));
-  const platformUnknown =
-    !scan.platform_detected ||
-    scan.platform_detected === "Custom / Headless" ||
-    scan.platform_detected === "—";
-  // Two-signal requirement: bot/robots fetch is failing AND platform
-  // detection bailed out. That rules out a real headless commerce
-  // store that simply lacks Shopify markers.
-  return Boolean((probeBad || robotsBad) && platformUnknown);
+  const schemaCheck = findCheck("discovery-schema-org-jsonld");
+  const orgCheck = findCheck("discovery-organization-schema");
+  // Either Schema.org JSON-LD or Organization-JSON-LD detection
+  // failing is our trigger. If the merchant has enabled the Asva
+  // embeds these checks should pass; when they don't, something is
+  // blocking the audit from reading the storefront HTML.
+  return Boolean(
+    (schemaCheck && schemaCheck.status === "fail") ||
+      (orgCheck && orgCheck.status === "fail"),
+  );
 }
 
 export const headers = (headersArgs) => {
