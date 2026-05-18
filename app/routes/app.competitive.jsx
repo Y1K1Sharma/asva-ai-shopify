@@ -19,9 +19,30 @@ import {
   Button,
   Spinner,
   Layout,
+  IndexTable,
 } from "@shopify/polaris";
+import { STATUS_TONE, STATUS_LABEL } from "../scan-utils";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Side-by-side check comparison list — curated to span UCP / ACP /
+// Infrastructure and to surface the checks merchants most often need
+// to see their lead/trail on. Includes the JSON-LD checks our embeds
+// pass so the comparison makes the value of installing Asva obvious.
+const KEY_CHECKS = [
+  { id: "discovery-schema-org-jsonld",        label: "Schema.org JSON-LD on homepage" },
+  { id: "discovery-organization-schema",      label: "Organization / WebSite JSON-LD" },
+  { id: "ai-google-merchant-product-schema",  label: "Product JSON-LD (Google Merchant)" },
+  { id: "ai-perplexity-readiness",            label: "Perplexity readiness signals" },
+  { id: "ai-claude-readiness",                label: "Claude readiness signals" },
+  { id: "manifest-exists",                    label: "UCP manifest at /.well-known/ucp" },
+  { id: "acp-checkout-cap-declared",          label: "ACP checkout capability" },
+  { id: "acp-https-enforced",                 label: "HTTPS enforced on storefront" },
+  { id: "security-hsts",                      label: "HSTS header (max-age ≥ 1 year)" },
+  { id: "bot-robots-txt-exists",              label: "robots.txt accessible to bots" },
+  { id: "discovery-sitemap-exists",           label: "sitemap.xml present" },
+  { id: "manifest-cors",                      label: "Manifest CORS headers" },
+];
 
 const GRADE_TONE = {
   Excellent: "success",
@@ -213,8 +234,68 @@ function Comparison({ self, competitor }) {
           <IssueRow label="Total issues" selfVal={self.scan.issue_summary?.total} competitorVal={competitor.scan.issue_summary?.total} bold />
         </BlockStack>
       </Card>
+
+      <KeyChecksCompare self={self.scan} competitor={competitor.scan} />
     </BlockStack>
   );
+}
+
+function KeyChecksCompare({ self, competitor }) {
+  const selfChecks = Array.isArray(self?.checks) ? self.checks : [];
+  const compChecks = Array.isArray(competitor?.checks) ? competitor.checks : [];
+
+  // Skip the whole card if neither scan returned individual checks (free
+  // tier sanitized response). For unlocked Shopify-app callers both will
+  // be present.
+  if (selfChecks.length === 0 && compChecks.length === 0) return null;
+
+  const findStatus = (checks, id) => checks.find((c) => c?.id === id)?.status ?? null;
+
+  return (
+    <Card>
+      <BlockStack gap="300">
+        <Text as="h2" variant="headingSm">Key checks — side-by-side</Text>
+        <Text as="p" variant="bodySm" tone="subdued">
+          The most-impactful agentic-readiness signals. Green = pass, red = fail, yellow = warn, blue = info.
+        </Text>
+        <Divider />
+        {KEY_CHECKS.map((item) => {
+          const selfStatus = findStatus(selfChecks, item.id);
+          const compStatus = findStatus(compChecks, item.id);
+          return (
+            <InlineStack key={item.id} align="space-between" blockAlign="center" wrap={false}>
+              <Box>
+                <Text as="span" variant="bodyMd">
+                  {item.label}
+                </Text>
+              </Box>
+              <InlineStack gap="200" blockAlign="center">
+                <Box minWidth="80px">
+                  <InlineStack gap="100" blockAlign="center">
+                    <Text as="span" variant="bodySm" tone="subdued">You</Text>
+                    <StatusBadge status={selfStatus} />
+                  </InlineStack>
+                </Box>
+                <Box minWidth="80px">
+                  <InlineStack gap="100" blockAlign="center">
+                    <Text as="span" variant="bodySm" tone="subdued">Them</Text>
+                    <StatusBadge status={compStatus} />
+                  </InlineStack>
+                </Box>
+              </InlineStack>
+            </InlineStack>
+          );
+        })}
+      </BlockStack>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }) {
+  if (!status) return <Badge>—</Badge>;
+  const tone = STATUS_TONE[status];
+  const label = STATUS_LABEL[status] || status;
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function ScoreCard({ label, name, scan }) {
