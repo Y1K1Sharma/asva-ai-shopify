@@ -51,13 +51,22 @@ export const loader = async ({ params, request }) => {
   }
 
   const headers = new Headers();
-  // Copy through content-type + caching; DROP frame-blocking + transport headers.
+  // Copy through content-type + caching; DROP the upstream frame-blocking + transport headers.
   const ct = upstream.headers.get("content-type");
   if (ct) headers.set("Content-Type", ct);
   const cc = upstream.headers.get("cache-control");
   if (cc) headers.set("Cache-Control", cc);
-  // Explicitly allow this app to frame its own proxied content.
-  headers.set("X-Frame-Options", "SAMEORIGIN");
+
+  // Framing: this iframe is nested inside Shopify admin, so the ancestor chain
+  // is [our app page (self)] -> [admin.shopify.com / <shop>.myshopify.com].
+  // X-Frame-Options:SAMEORIGIN checks the TOP-LEVEL origin (admin.shopify.com),
+  // NOT the immediate parent, so it FALSELY blocks our same-origin nested
+  // iframe. CSP frame-ancestors is ancestor-chain-aware — use it and do NOT
+  // emit X-Frame-Options (we never copy it from upstream; it's omitted here).
+  headers.set(
+    "Content-Security-Policy",
+    "frame-ancestors 'self' https://admin.shopify.com https://*.myshopify.com",
+  );
 
   const body = await upstream.arrayBuffer();
   return new Response(body, { status: upstream.status, headers });
