@@ -12,7 +12,7 @@
  * Token is delivered ONLY via postMessage (never in the iframe URL).
  */
 import { useEffect, useRef, useState } from "react";
-import { useLoaderData } from "react-router";
+import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import { provisionShop } from "../asva-api.server";
 
@@ -39,6 +39,7 @@ export const loader = async ({ request }) => {
 
 export default function Dashboard() {
   const { asvaBrand } = useLoaderData();
+  const navigate = useNavigate();
   const iframeRef = useRef(null);
   const [failed, setFailed] = useState(false);
 
@@ -66,6 +67,12 @@ export default function Dashboard() {
       const type = ev.data?.type;
       if (type === "asva-embedded-ready") {
         postAuth(asvaBrand.token);
+      } else if (type === "asva-embedded-navigate") {
+        // Agentic Readiness hand-off: the embedded dashboard asks us to open one
+        // of the native app pages (All Checks / Fixes / Catalog). Only allow
+        // in-app paths so the iframe can't drive arbitrary navigation.
+        const to = ev.data?.to;
+        if (typeof to === "string" && to.startsWith("/app")) navigate(to);
       } else if (type === "asva-embedded-refresh") {
         try {
           const res = await fetch("/app/dashboard/token");
@@ -81,7 +88,7 @@ export default function Dashboard() {
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [asvaBrand]);
+  }, [asvaBrand, navigate]);
 
   if (!asvaBrand) {
     return (
