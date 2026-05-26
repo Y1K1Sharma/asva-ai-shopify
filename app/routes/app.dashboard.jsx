@@ -112,6 +112,25 @@ export default function Dashboard() {
       src={embedSrc}
       title="Asva AI Dashboard"
       onError={() => setFailed(true)}
+      onLoad={() => {
+        // Proactively push the token once the iframe has loaded — covers the
+        // race where the SPA's 'ready' message fires before this host's
+        // message listener is attached. The SPA's listener is set in its
+        // bootstrap (before onLoad), so this is always received.
+        const win = iframeRef.current?.contentWindow;
+        if (win && asvaBrand) {
+          win.postMessage(
+            {
+              type: "asva-embedded-auth",
+              token: asvaBrand.token,
+              brandId: asvaBrand.brandId,
+              brandName: asvaBrand.brandName,
+              brandDomain: asvaBrand.brandDomain,
+            },
+            window.location.origin,
+          );
+        }
+      }}
       style={{
         width: "100%",
         height: "100vh",
