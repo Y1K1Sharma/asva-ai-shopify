@@ -53,6 +53,7 @@ export default function Dashboard() {
           type: "asva-embedded-auth",
           token,
           brandId: asvaBrand.brandId,
+          brandName: asvaBrand.brandName,
           brandDomain: asvaBrand.brandDomain,
         },
         window.location.origin,
@@ -95,10 +96,20 @@ export default function Dashboard() {
     );
   }
 
+  // Load the iframe straight at the shop's brand dashboard (/embed/<slug>) so
+  // it skips the company-picker. Slug matches the SPA's toCompanySlug().
+  const slug = (asvaBrand.brandName || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+  const embedSrc = slug ? `/embed/${slug}` : "/embed/";
+
   return (
     <iframe
       ref={iframeRef}
-      src="/embed/"
+      src={embedSrc}
       title="Asva AI Dashboard"
       onError={() => setFailed(true)}
       style={{
