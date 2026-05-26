@@ -24,7 +24,15 @@ const DASHBOARD_ORIGIN =
 export const loader = async ({ params, request }) => {
   const splat = params["*"] || "";
   const incoming = new URL(request.url);
-  const target = `${DASHBOARD_ORIGIN}/embed/${splat}${incoming.search}`;
+
+  // SPA fallback, done here (not via Netlify redirects, which serve the WRONG
+  // index for deep /embed/<route> paths). Real files (assets, favicon, anything
+  // with an extension) are proxied as-is; every other path gets the embed
+  // index.html so the client-side router can take over.
+  const cleanPath = splat.split("?")[0];
+  const isFile = splat.startsWith("assets/") || /\.[a-z0-9]+$/i.test(cleanPath);
+  const upstreamPath = isFile ? `/embed/${splat}` : `/embed/index.html`;
+  const target = `${DASHBOARD_ORIGIN}${upstreamPath}${incoming.search}`;
 
   let upstream;
   try {
