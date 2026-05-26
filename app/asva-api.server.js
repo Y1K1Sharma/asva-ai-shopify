@@ -73,3 +73,51 @@ export async function scanShopifyShop(shopDomain) {
   return res.json();
 }
 
+/**
+ * Link an installed Shopify shop to its Asvaai parent_brand and get a
+ * short-lived shop-scoped JWT for the embedded dashboard.
+ *
+ * Calls POST /api/v5/shopify/provision (authed by the X-Asva-App-Key shared
+ * secret). The backend create-or-claims the brand (race-safe), records the
+ * install, and returns { brand_id, token, expires_in, ... }. The embedded
+ * dashboard SPA (Phase B) uses `token` to read this brand's geo_vis data via
+ * the same backend endpoints the web app uses.
+ *
+ * Requires ASVA_APP_KEY to be set — without it the backend rejects with 401,
+ * so callers MUST treat a thrown error as non-fatal (the scanner pages work
+ * regardless of provisioning).
+ *
+ * @param {string} shopDomain   - the *.myshopify.com domain (install key)
+ * @param {object} [opts]
+ * @param {string} [opts.storefrontDomain] - public storefront/custom domain for the brand
+ * @param {string} [opts.shopName]         - display name of the shop
+ * @returns {Promise<object>} { brand_id, brand_name, domain, shop_domain, claimed_existing, token, expires_in }
+ * @throws {Error} on HTTP failure (e.g. ASVA_APP_KEY unset -> 401).
+ */
+export async function provisionShop(shopDomain, opts = {}) {
+  if (!ASVA_APP_KEY) {
+    throw new Error("ASVA_APP_KEY not configured — Shopify bridge disabled");
+  }
+  const url = `${ASVA_API_BASE}/api/v5/shopify/provision`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify({
+      shop_domain: shopDomain,
+      domain: opts.storefrontDomain || undefined,
+      shop_name: opts.shopName || undefined,
+    }),
+  });
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = body.detail;
+    } catch {
+      /* ignore parse error */
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
