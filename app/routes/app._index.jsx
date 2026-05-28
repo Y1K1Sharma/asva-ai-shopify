@@ -22,6 +22,7 @@
 import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { loadShopScan } from "../scan-loader.server";
+import { authenticate } from "../shopify.server";
 import { Page, Tabs, Badge } from "@shopify/polaris";
 import { useCallback, useMemo } from "react";
 import { HomeTab } from "../components/readiness/HomeTab";
@@ -31,6 +32,85 @@ import { CompetitiveTab } from "../components/readiness/CompetitiveTab";
 import { CatalogTab } from "../components/readiness/CatalogTab";
 import { FixesTab } from "../components/readiness/FixesTab";
 import { PlaygroundTab } from "../components/readiness/PlaygroundTab";
+
+// Catalog data is fetched lazily inside the parent loader when ?tab=catalog
+// is set. We don't pay the GraphQL cost on Home / Checks / etc.
+const CATALOG_PAGE_SIZE = 25;
+const CATALOG_PRODUCTS_QUERY = `#graphql
+  query CatalogProducts($first: Int!, $after: String, $before: String, $last: Int) {
+    products(first: $first, after: $after, before: $before, last: $last, sortKey: TITLE) {
+      edges {
+        cursor
+        node {
+          id
+          title
+          handle
+          status
+          description
+          descriptionHtml
+          tags
+          vendor
+          productType
+          options { id name }
+          variantsCount { count }
+          media(first: 3) {
+            edges {
+              node {
+                ... on MediaImage { id alt image { url width height } }
+              }
+            }
+          }
+        }
+      }
+      pageInfo {
+        hasNextPage
+        hasPreviousPage
+        startCursor
+        endCursor
+      }
+    }
+    productsCount { count precision }
+  }
+`;
+
+async function fetchCatalog(request) {
+  const { admin } = await authenticate.admin(request);
+  const url = new URL(request.url);
+  const after = url.searchParams.get("after");
+  const before = url.searchParams.get("before");
+  const variables = before
+    ? { first: null, last: CATALOG_PAGE_SIZE, before, after: null }
+    : { first: CATALOG_PAGE_SIZE, last: null, after, before: null };
+  try {
+    const response = await admin.graphql(CATALOG_PRODUCTS_QUERY, { variables });
+    const json = await response.json();
+    if (json.errors) {
+      console.error("[app._index] catalog GraphQL errors:", JSON.stringify(json.errors));
+      return {
+        products: [],
+        pageInfo: null,
+        totalCount: 0,
+        loadError: json.errors.map((e) => e.message).join("; "),
+      };
+    }
+    const data = json.data;
+    return {
+      products: (data.products.edges || []).map((e) => e.node),
+      pageInfo: data.products.pageInfo,
+      totalCount: data.productsCount?.count ?? null,
+      precision: data.productsCount?.precision ?? null,
+      loadError: null,
+    };
+  } catch (err) {
+    console.error("[app._index] catalog fetch failed:", err);
+    return {
+      products: [],
+      pageInfo: null,
+      totalCount: 0,
+      loadError: err instanceof Error ? err.message : "Failed to load products.",
+    };
+  }
+}
 
 const TAB_DEFS = [
   { id: "home", content: "Home", panelID: "tab-home" },
@@ -50,25 +130,42 @@ const GRADE_TONE = {
   "Very Poor": "critical",
 };
 
-// IMPORTANT: loader stays UNCHANGED from the pre-v2.1 version. loadShopScan
-// calls authenticate.admin(request) internally, which is critical for the
-// embedded-app auth flow on first install. Do not replace this with a bare
-// throw redirect(...) - it breaks fresh installs (see d43c155 revert).
-export const loader = async ({ request }) => loadShopScan(request);
+// loadShopScan calls authenticate.admin(request) internally, critical for the
+// embedded-app auth flow on first install (see d43c155). The conditional
+// Catalog fetch piggybacks on that authenticated request when ?tab=catalog
+// is set, so other tabs don't pay the Admin GraphQL cost.
+export const loader = async ({ request }) => {
+  const scanData = await loadShopScan(request);
+  const url = new URL(request.url);
+  const tab = url.searchParams.get("tab") || "home";
+  let catalog = null;
+  if (tab === "catalog") {
+    catalog = await fetchCatalog(request);
+  }
+  return { ...scanData, catalog };
+};
 
-// Tab switching is purely a UI concern (?tab=X) — don't re-hit loadShopScan on
-// every tab click. We still revalidate when ?rescan=1 is set (the Rescan flow)
-// or when the pathname changes. This makes tab clicks feel instant; previously
-// every tab change paid for a fresh loader + backend round-trip.
+// Tab switching is purely a UI concern (?tab=X) — don't re-hit the loader on
+// every tab click. We still revalidate on rescan transitions, pathname changes,
+// and Catalog tab transitions (which need a fresh GraphQL fetch).
 export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }) {
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
-  // Force revalidation whenever rescan=1 appears (or disappears) — the rescan
-  // mechanism toggles the flag, and we want the loader to re-run for both
-  // edges of that toggle so cached state reflects the freshly-completed scan.
   if (currentUrl.searchParams.get("rescan") !== nextUrl.searchParams.get("rescan")) {
     return true;
   }
-  // If everything except ?tab changed, fall through to defaults.
+  const curTab = currentUrl.searchParams.get("tab") || "home";
+  const nextTab = nextUrl.searchParams.get("tab") || "home";
+  // Catalog tab needs Admin GraphQL data. Revalidate whenever entering or
+  // leaving Catalog, or when pagination params (after / before) change.
+  if (nextTab === "catalog" || curTab === "catalog") {
+    if (curTab !== nextTab) return true;
+    if (
+      currentUrl.searchParams.get("after") !== nextUrl.searchParams.get("after") ||
+      currentUrl.searchParams.get("before") !== nextUrl.searchParams.get("before")
+    ) {
+      return true;
+    }
+  }
   const curOther = new URLSearchParams([...currentUrl.searchParams].filter(([k]) => k !== "tab"));
   const nextOther = new URLSearchParams([...nextUrl.searchParams].filter(([k]) => k !== "tab"));
   if (curOther.toString() === nextOther.toString()) return false;
