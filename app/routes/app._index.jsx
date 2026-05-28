@@ -23,6 +23,7 @@ import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchP
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { loadShopScan } from "../scan-loader.server";
 import { authenticate } from "../shopify.server";
+import { scanShopifyShop } from "../asva-api.server";
 import { Page, Tabs, Badge } from "@shopify/polaris";
 import { useCallback, useMemo } from "react";
 import { HomeTab } from "../components/readiness/HomeTab";
@@ -72,6 +73,44 @@ const CATALOG_PRODUCTS_QUERY = `#graphql
     productsCount { count precision }
   }
 `;
+
+// Validate + normalize a competitor domain string. Strips protocol/trailing
+// slashes, then asserts a basic domain shape so we don't ship "javascript:..."
+// or path-only inputs to the backend scanner.
+function normalizeCompetitor(raw) {
+  const input = (raw || "").trim();
+  if (!input) return { domain: "", valid: false };
+  const normalized = input.toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(normalized)) {
+    return { domain: input, valid: false };
+  }
+  return { domain: normalized.split("/")[0], valid: true };
+}
+
+// Competitor scan is lazy: only runs when ?tab=competitive AND ?competitor=
+// are both set. Returns { domain, scan, error } shaped object the
+// CompetitiveTab consumes via useLoaderData().
+async function fetchCompetitor(url) {
+  const raw = url.searchParams.get("competitor") || "";
+  if (!raw.trim()) return null;
+  const { domain, valid } = normalizeCompetitor(raw);
+  if (!valid) {
+    return { domain, scan: null, error: "Please enter a valid domain (e.g. allbirds.com)." };
+  }
+  try {
+    const scan = await scanShopifyShop(domain);
+    return { domain, scan, error: null };
+  } catch (err) {
+    console.error("[app._index] competitor scan failed:", err);
+    return {
+      domain,
+      scan: null,
+      error: err instanceof Error
+        ? `Couldn't scan ${domain}: ${err.message}`
+        : `Couldn't scan ${domain}.`,
+    };
+  }
+}
 
 async function fetchCatalog(request) {
   const { admin } = await authenticate.admin(request);
@@ -139,10 +178,13 @@ export const loader = async ({ request }) => {
   const url = new URL(request.url);
   const tab = url.searchParams.get("tab") || "home";
   let catalog = null;
+  let competitor = null;
   if (tab === "catalog") {
     catalog = await fetchCatalog(request);
+  } else if (tab === "competitive") {
+    competitor = await fetchCompetitor(url);
   }
-  return { ...scanData, catalog };
+  return { ...scanData, catalog, competitor };
 };
 
 // Tab switching is purely a UI concern (?tab=X) — don't re-hit the loader on
@@ -166,6 +208,16 @@ export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate 
       return true;
     }
   }
+  // Competitive tab needs to rescan the competitor when the ?competitor=
+  // query string changes (form submit or Clear). Tab-only transitions into
+  // Competitive without a competitor query stay instant (no scan needed).
+  if (nextTab === "competitive" || curTab === "competitive") {
+    if (
+      currentUrl.searchParams.get("competitor") !== nextUrl.searchParams.get("competitor")
+    ) {
+      return true;
+    }
+  }
   const curOther = new URLSearchParams([...currentUrl.searchParams].filter(([k]) => k !== "tab"));
   const nextOther = new URLSearchParams([...nextUrl.searchParams].filter(([k]) => k !== "tab"));
   if (curOther.toString() === nextOther.toString()) return false;
@@ -177,6 +229,13 @@ export default function AgenticReadinessHome() {
   const navigation = useNavigation();
   const { revalidate } = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Only show the Rescan button's spinner when an ACTUAL rescan is in flight.
+  // Without this, the button flashes "Rescanning…" any time the loader
+  // re-runs — e.g. when entering Catalog (which fetches Admin GraphQL),
+  // which is misleading because no scan is happening.
+  const isRescanInFlight =
+    navigation.state === "loading" &&
+    (navigation.location?.search?.includes("rescan=1") ?? false);
   const isLoading = navigation.state === "loading";
 
   const shopName = (shop || "").replace(/\.myshopify\.com$/, "");
@@ -239,9 +298,9 @@ export default function AgenticReadinessHome() {
       titleMetadata={grade ? <Badge tone={gradeTone}>{grade}</Badge> : null}
       subtitle={shopName ? `Connected to ${shopName}` : undefined}
       primaryAction={{
-        content: isLoading ? "Rescanning…" : "Rescan",
+        content: isRescanInFlight ? "Rescanning…" : "Rescan",
         onAction: handleRescan,
-        loading: isLoading,
+        loading: isRescanInFlight,
       }}
     >
       <Tabs
