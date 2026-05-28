@@ -56,6 +56,25 @@ const GRADE_TONE = {
 // throw redirect(...) - it breaks fresh installs (see d43c155 revert).
 export const loader = async ({ request }) => loadShopScan(request);
 
+// Tab switching is purely a UI concern (?tab=X) — don't re-hit loadShopScan on
+// every tab click. We still revalidate when ?rescan=1 is set (the Rescan flow)
+// or when the pathname changes. This makes tab clicks feel instant; previously
+// every tab change paid for a fresh loader + backend round-trip.
+export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }) {
+  if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
+  // Force revalidation whenever rescan=1 appears (or disappears) — the rescan
+  // mechanism toggles the flag, and we want the loader to re-run for both
+  // edges of that toggle so cached state reflects the freshly-completed scan.
+  if (currentUrl.searchParams.get("rescan") !== nextUrl.searchParams.get("rescan")) {
+    return true;
+  }
+  // If everything except ?tab changed, fall through to defaults.
+  const curOther = new URLSearchParams([...currentUrl.searchParams].filter(([k]) => k !== "tab"));
+  const nextOther = new URLSearchParams([...nextUrl.searchParams].filter(([k]) => k !== "tab"));
+  if (curOther.toString() === nextOther.toString()) return false;
+  return defaultShouldRevalidate;
+}
+
 export default function AgenticReadinessHome() {
   const { shop, scan } = useLoaderData();
   const navigation = useNavigation();

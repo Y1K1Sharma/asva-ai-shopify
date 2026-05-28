@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useLoaderData, useNavigate } from "react-router";
 import {
   Card,
@@ -18,6 +18,58 @@ import {
 import { SEVERITY_TONE, SEVERITIES, scanIsUnlocked } from "../../scan-utils";
 import { applyFixUrl, blockForCheckId, blockTypeFor } from "../../tae-fix-map";
 import { usePendingApply, markPendingApply } from "../../use-pending-apply";
+
+// Client-side "recently applied" tracker so the Apply Fix button gives visible
+// feedback the moment the merchant clicks it, even though the backend can't
+// verify the change until the next Rescan completes (and even then, only on
+// publicly-accessible stores — see the password-gate banner below).
+//
+// We record check_id -> timestamp in localStorage and decay entries after
+// APPLIED_TTL_MS. When the next Rescan removes the fix from the list (because
+// the check now passes), the entry just naturally falls out of view; when it
+// times out without verification, we go back to the "Apply fix" CTA.
+const APPLIED_KEY = "asva_recently_applied_fixes";
+const APPLIED_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function readAppliedMap() {
+  try {
+    const raw = localStorage.getItem(APPLIED_KEY);
+    if (!raw) return {};
+    const map = JSON.parse(raw);
+    const now = Date.now();
+    const fresh = {};
+    for (const [id, ts] of Object.entries(map)) {
+      if (typeof ts === "number" && now - ts < APPLIED_TTL_MS) fresh[id] = ts;
+    }
+    return fresh;
+  } catch {
+    return {};
+  }
+}
+
+function writeAppliedCheck(checkId) {
+  if (!checkId) return;
+  try {
+    const map = readAppliedMap();
+    map[checkId] = Date.now();
+    localStorage.setItem(APPLIED_KEY, JSON.stringify(map));
+  } catch { /* sandboxed / no localStorage */ }
+}
+
+// Reuse the same gate detection as Home: the schema/org checks failing usually
+// means the storefront is password-gated, behind a WAF, or the embeds aren't
+// enabled yet. Used to show a clarifying banner in the Fixes tab so merchants
+// on dev-plan stores understand why their score isn't moving after Apply Fix.
+function detectStorefrontGated(scan) {
+  if (!scan) return false;
+  const checks = Array.isArray(scan.checks) ? scan.checks : [];
+  const find = (id) => checks.find((c) => c?.id === id);
+  const schema = find("discovery-schema-org-jsonld");
+  const org = find("discovery-organization-schema");
+  return Boolean(
+    (schema && schema.status === "fail") || (org && org.status === "fail"),
+  );
+}
 
 const EFFORT_TONE = {
   easy: "success",
@@ -66,6 +118,8 @@ export function FixesTab() {
   const fallbackFixes = Array.isArray(scan?.top_5_fixes) ? scan.top_5_fixes : [];
   const allFixes = unlocked && Array.isArray(scan?.fixes) ? scan.fixes : fallbackFixes;
   const shopName = shop.replace(/\.myshopify\.com$/, "");
+  const gated = detectStorefrontGated(scan);
+  const hasThemeEmbedFixes = allFixes.some((f) => Boolean(applyFixUrl(f, shop)));
 
   return (
     <BlockStack gap="400">
@@ -92,6 +146,23 @@ export function FixesTab() {
         <Text as="p" variant="bodySm" tone="subdued">
           Showing cached result. Click Rescan above for fresh data.
         </Text>
+      )}
+      {gated && hasThemeEmbedFixes && (
+        <Banner title="Applied fixes can't be verified yet — your storefront is gated" tone="warning">
+          <p>
+            Our audit fetches your storefront like a public bot. Because{" "}
+            <strong>{shopName}</strong> is currently password-protected (or behind
+            a WAF), it gets redirected to <code>/password</code> and can&rsquo;t
+            see the Schema.org JSON-LD your Asva AI embeds emit on the real
+            storefront. Apply Fix still works and your embeds are active —{" "}
+            <strong>the score will populate as soon as your store is publicly accessible</strong>.
+          </p>
+          <p>
+            To test verification on this store now: <strong>Online Store →
+            Preferences → Password protection</strong> → turn it off temporarily,
+            then Rescan.
+          </p>
+        </Banner>
       )}
         {!unlocked && allFixes.length > 0 && (
           <Banner title="Showing top 5 fixes only" tone="info">
@@ -218,12 +289,20 @@ function FixList({ fixes, unlocked, shop }) {
 
 function FixCard({ fix, unlocked, index, shop }) {
   const [open, setOpen] = useState(false);
+  const [appliedAt, setAppliedAt] = useState(
+    () => readAppliedMap()[fix.check_id] || null,
+  );
   const sevTone = SEVERITY_TONE[fix.severity];
   const effortTone = EFFORT_TONE[fix.effort];
   const hasCode = Boolean(fix.code_snippet);
   const applyUrl = applyFixUrl(fix, shop);
   const block = blockForCheckId(fix.check_id);
   const blockType = blockTypeFor(block);
+  const handleApplyClick = useCallback(() => {
+    markPendingApply();
+    writeAppliedCheck(fix.check_id);
+    setAppliedAt(Date.now());
+  }, [fix.check_id]);
   // Block-specific instruction. Each tooltip names the exact embed
   // the merchant has to toggle on so they don't pick the wrong one.
   // Every block is now an embed; the App embeds panel is one click
@@ -247,7 +326,7 @@ function FixCard({ fix, unlocked, index, shop }) {
       <BlockStack gap="300">
         <InlineStack align="space-between" blockAlign="start" wrap={false}>
           <BlockStack gap="100">
-            <InlineStack gap="200" wrap>
+            <InlineStack gap="100" blockAlign="baseline" wrap={false}>
               <Text as="span" variant="bodySm" tone="subdued">
                 #{index}
               </Text>
@@ -266,17 +345,36 @@ function FixCard({ fix, unlocked, index, shop }) {
               {fix.platform && fix.platform !== "custom" && (
                 <Badge tone="info">{fix.platform}</Badge>
               )}
-              {applyUrl && <Badge tone="success">Theme embed available</Badge>}
+              {applyUrl && !appliedAt && <Badge tone="success">Theme embed available</Badge>}
             </InlineStack>
           </BlockStack>
           <Box>
-            {applyUrl ? (
+            {appliedAt ? (
+              // Merchant clicked Apply Fix recently. Backend hasn't yet
+              // verified the change (next Rescan will). Show acknowledgement +
+              // a "Re-apply" escape hatch in case the embed wasn't actually
+              // toggled on.
+              <BlockStack gap="100" inlineAlign="end">
+                <Badge tone="success">Applied · verifying</Badge>
+                {applyUrl && (
+                  <Button
+                    variant="plain"
+                    url={applyUrl}
+                    external
+                    onClick={handleApplyClick}
+                    accessibilityLabel={`Re-apply fix: ${fix.title}`}
+                  >
+                    Re-apply
+                  </Button>
+                )}
+              </BlockStack>
+            ) : applyUrl ? (
               <Tooltip content={applyTooltip}>
                 <Button
                   variant="primary"
                   url={applyUrl}
                   external
-                  onClick={markPendingApply}
+                  onClick={handleApplyClick}
                   accessibilityLabel={`Apply fix: ${fix.title}`}
                 >
                   Apply fix
