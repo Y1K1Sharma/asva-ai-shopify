@@ -25,7 +25,7 @@ import { loadShopScan } from "../scan-loader.server";
 import { authenticate } from "../shopify.server";
 import { scanShopifyShop } from "../asva-api.server";
 import { Page, Tabs, Badge } from "@shopify/polaris";
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { HomeTab } from "../components/readiness/HomeTab";
 import { ChecksTab } from "../components/readiness/ChecksTab";
 import { CrossProtocolTab } from "../components/readiness/CrossProtocolTab";
@@ -192,8 +192,18 @@ export const loader = async ({ request }) => {
 // and Catalog tab transitions (which need a fresh GraphQL fetch).
 export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }) {
   if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
-  if (currentUrl.searchParams.get("rescan") !== nextUrl.searchParams.get("rescan")) {
-    return true;
+  // Rescan flow: only revalidate when STARTING a rescan (transitioning into
+  // rescan=1). When the flag is auto-cleared after the rescan completes, we
+  // do NOT want to revalidate — that triggers a second loader call which
+  // returns cached data instantly and overwrites the freshly-scanned result
+  // (the race Yash hit: rescan appeared to complete in milliseconds because
+  // the cached call won).
+  {
+    const curRescan = currentUrl.searchParams.get("rescan");
+    const nextRescan = nextUrl.searchParams.get("rescan");
+    if (curRescan !== nextRescan) {
+      return nextRescan === "1";
+    }
   }
   const curTab = currentUrl.searchParams.get("tab") || "home";
   const nextTab = nextUrl.searchParams.get("tab") || "home";
@@ -250,26 +260,44 @@ export default function AgenticReadinessHome() {
 
   const handleTabChange = useCallback(
     (idx) => {
+      const tabId = TAB_DEFS[idx].id;
       const next = new URLSearchParams(searchParams);
-      next.set("tab", TAB_DEFS[idx].id);
+      next.set("tab", tabId);
+      // Tab-scoped query params don't carry over to other tabs. Without this,
+      // ?competitor=hrx.com lingers on Catalog/Home etc., and re-entering
+      // Competitive re-runs the previous scan + shows stale comparison.
+      if (tabId !== "competitive") next.delete("competitor");
+      if (tabId !== "catalog") {
+        next.delete("after");
+        next.delete("before");
+      }
       setSearchParams(next, { replace: true });
     },
     [searchParams, setSearchParams],
   );
 
-  // Rescan: toggle ?rescan=1 + revalidate. ONE revalidation refreshes the
-  // shared loader data for every tab simultaneously.
+  // Rescan: set ?rescan=1 + revalidate. The flag stays in the URL until the
+  // revalidation finishes (see the useEffect below); we don't auto-clear it
+  // with setTimeout because that races the fresh scan and wins (cached path
+  // returns instantly, overwriting fresh data).
   const handleRescan = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.set("rescan", "1");
     setSearchParams(next, { replace: true });
     revalidate();
-    setTimeout(() => {
+  }, [searchParams, setSearchParams, revalidate]);
+
+  // Clear the rescan flag AFTER the loader has finished. This runs once
+  // navigation.state goes back to "idle". Without this the URL keeps
+  // ?rescan=1 forever (and subsequent tab clicks would force a fresh
+  // scan every time, blowing the cache).
+  useEffect(() => {
+    if (navigation.state === "idle" && searchParams.get("rescan") === "1") {
       const cleared = new URLSearchParams(searchParams);
       cleared.delete("rescan");
       setSearchParams(cleared, { replace: true });
-    }, 100);
-  }, [searchParams, setSearchParams, revalidate]);
+    }
+  }, [navigation.state, searchParams, setSearchParams]);
 
   const activeTabBody = useMemo(() => {
     switch (activeTabId) {
