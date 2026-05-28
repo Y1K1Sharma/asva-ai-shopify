@@ -136,14 +136,23 @@ export function CompetitiveTab() {
         </Banner>
       )}
 
-      {isScanningCompetitor && competitorDomain && (
-        <Card>
-          <InlineStack gap="200" align="center">
-            <Spinner accessibilityLabel="Scanning competitor" />
-            <Text as="p">Scanning {competitorDomain}…</Text>
-          </InlineStack>
-        </Card>
-      )}
+      {isScanningCompetitor && (() => {
+        // Show the domain currently being scanned (from the in-flight URL),
+        // not the previously-resolved one (competitorDomain), so the spinner
+        // label updates immediately when the merchant submits a new domain.
+        const pendingDomain = new URLSearchParams(
+          navigation.location?.search || "",
+        ).get("competitor") || competitorDomain;
+        if (!pendingDomain) return null;
+        return (
+          <Card>
+            <InlineStack gap="200" align="center">
+              <Spinner accessibilityLabel="Scanning competitor" />
+              <Text as="p">Scanning {pendingDomain}…</Text>
+            </InlineStack>
+          </Card>
+        );
+      })()}
 
       {selfScan && competitorScan && !isScanningCompetitor && (
         <Comparison
