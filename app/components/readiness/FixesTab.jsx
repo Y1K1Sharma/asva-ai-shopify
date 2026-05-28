@@ -326,14 +326,17 @@ function FixCard({ fix, unlocked, index, shop }) {
       <BlockStack gap="300">
         <InlineStack align="space-between" blockAlign="start" wrap={false}>
           <BlockStack gap="100">
-            <InlineStack gap="100" blockAlign="baseline" wrap={false}>
-              <Text as="span" variant="bodySm" tone="subdued">
-                #{index}
-              </Text>
-              <Text as="h3" variant="headingSm">
-                {fix.title || fix.check_id}
-              </Text>
-            </InlineStack>
+            {/*
+              Render #N + title inside ONE Text element so there is no flex
+              gap between them - just a single regular space. Using a nested
+              Text as="span" with smaller variant + subdued tone gives us the
+              visual distinction without any layout spacing.
+            */}
+            <Text as="h3" variant="headingSm">
+              <Text as="span" variant="bodySm" tone="subdued">#{index}</Text>
+              {" "}
+              {fix.title || fix.check_id}
+            </Text>
             <InlineStack gap="200" wrap>
               {fix.severity && (
                 <Badge tone={sevTone}>{fix.severity}</Badge>
