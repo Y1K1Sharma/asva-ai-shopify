@@ -14,7 +14,6 @@
  */
 import { authenticate } from "../shopify.server";
 import { ingestOnInstall } from "../asva-api.server";
-import { fetchShopSnapshot } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
