@@ -31,6 +31,50 @@ const SHOP_BASICS_QUERY = `#graphql
 `;
 
 /**
+ * Derive a CLEAN brand name from the shop's primary custom domain when one
+ * is available. "stylera.co" -> "Stylera", "house-of-zelena.com" -> "House Of
+ * Zelena". This is what the Asva dashboard / visibility metrics display, so
+ * we deliberately strip Shopify's shop.name suffixes like " (Dev Test)" /
+ * " - Development" / " Store" that Shopify auto-appends on dev stores.
+ *
+ * Falls back to the raw shopName when primaryDomain looks like a *.myshopify
+ * fallback (no real custom domain configured).
+ */
+export function deriveBrandName(primaryDomain, shopName) {
+  const raw = (shopName || "").trim();
+  const domain = (primaryDomain || "").trim().toLowerCase();
+
+  // PRIMARY: Shopify's shop.name with dev-store noise stripped. This preserves
+  // the brand's chosen casing (e.g. "House of Zelena" keeps lowercase "of").
+  const stripped = stripShopNameNoise(raw);
+  if (stripped && stripped.length >= 2) return stripped;
+
+  // FALLBACK: derive from primary domain when shop.name is empty or pure noise.
+  if (!domain || domain.endsWith(".myshopify.com") || domain.endsWith(".shopifypreview.com")) {
+    return stripped || raw || null;
+  }
+  const host = domain.replace(/^www\./, "");
+  const label = host.split(".")[0] || host;
+  const parts = label.split(/[-_.]/).filter(Boolean);
+  if (!parts.length) return stripped || host;
+  return parts
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function stripShopNameNoise(name) {
+  if (!name) return name;
+  return name
+    // Trailing parenthesised tag: (Dev) / (Dev Test) / (Test) / (Staging) / (Demo) / (Sandbox)
+    .replace(/\s*\((dev|development|test|staging|demo|sandbox)(?:[\s_-]+test)?\)\s*$/i, "")
+    // Hyphen-suffixed tag: " - Dev" / " - Staging" / etc
+    .replace(/\s*-\s*(dev|development|test|staging|demo|sandbox)\s*$/i, "")
+    // Generic " Store" suffix
+    .replace(/\s+Store\s*$/i, "")
+    .trim();
+}
+
+/**
  * Resolve real shop identity via Admin GraphQL. Returns null when the
  * primary-domain feature flag is off OR the GraphQL call fails — both are
  * non-fatal: the caller renders the legacy *.myshopify.com label and we
@@ -39,6 +83,7 @@ const SHOP_BASICS_QUERY = `#graphql
  * @param {object} admin - the authenticated Admin client from `authenticate.admin(request)`
  * @returns {Promise<null | {
  *   shopName: string | null,
+ *   cleanBrandName: string | null,
  *   primaryDomain: string | null,
  *   primaryUrl: string | null,
  *   currencyCode: string | null,
@@ -64,9 +109,13 @@ export async function fetchShopBasics(admin) {
     const primary = shop.primaryDomain || {};
     const billing = shop.billingAddress || {};
 
+    const shopName = (shop.name || "").trim() || null;
+    const primaryDomain = ((primary.host || "").trim().toLowerCase()) || null;
+
     return {
-      shopName: (shop.name || "").trim() || null,
-      primaryDomain: ((primary.host || "").trim().toLowerCase()) || null,
+      shopName,
+      cleanBrandName: deriveBrandName(primaryDomain, shopName),
+      primaryDomain,
       primaryUrl: (primary.url || "").trim() || null,
       currencyCode: (shop.currencyCode || "").trim() || null,
       contactEmail: ((shop.contactEmail || "").trim().toLowerCase()) || null,

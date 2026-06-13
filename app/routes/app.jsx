@@ -29,7 +29,10 @@ export const loader = async ({ request }) => {
   try {
     if (session?.shop) {
       const p = await provisionShop(session.shop, {
-        shopName: shopBasics?.shopName || session.shop.split(".")[0],
+        // Prefer the CLEAN brand name derived from the primary domain
+        // (e.g. "stylera.co" -> "Stylera") over Shopify's shop.name field
+        // which often includes " (Dev Test)" / " Store" noise on dev stores.
+        shopName: shopBasics?.cleanBrandName || shopBasics?.shopName || session.shop.split(".")[0],
         storefrontDomain: shopBasics?.primaryDomain || undefined,
         shopOwnerEmail: shopBasics?.contactEmail || undefined,
         shopOwnerName: shopBasics?.shopOwnerName || undefined,
