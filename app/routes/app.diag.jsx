@@ -13,7 +13,7 @@
  * Authenticated via authenticate.admin so only the merchant can hit it.
  */
 import { authenticate } from "../shopify.server";
-import { ingestOnInstall } from "../asva-api.server";
+import { ASVA_API_BASE } from "../asva-api.server";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -105,37 +105,36 @@ export const loader = async ({ request }) => {
     };
   }
 
+  // Direct backend call — bypasses asva-api.server.ingestOnInstall's
+  // null-swallow so we can see the exact HTTP status + body.
   if (snapshotResult && session?.shop) {
+    const url = `${ASVA_API_BASE}/api/v5/shopify/ingest-on-install`;
+    diag.ingest_attempt = { target_url: url };
     try {
-      const ingestResult = await ingestOnInstall(session.shop, snapshotResult);
-      if (ingestResult === null) {
-        diag.ingest_attempt = {
-          ok: false,
-          reason:
-            "ingestOnInstall returned null — backend rejected the call. Check ASVA_APP_KEY matches, and that the staging backend has Phase 1 endpoints.",
-        };
-      } else if (ingestResult?.ingested) {
-        diag.ingest_attempt = {
-          ok: true,
-          brand_id: ingestResult.brand_id,
-          brand_name: ingestResult.brand_name,
-          primary_domain: ingestResult.primary_domain,
-          products_count: ingestResult.products_count,
-          catalog_rows_written: ingestResult.catalog_rows_written,
-          audit_job_id: ingestResult.audit_job_id,
-        };
-      } else {
-        diag.ingest_attempt = {
-          ok: false,
-          reason: "Unexpected backend shape",
-          raw: ingestResult,
-        };
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Asva-App-Key": env.ASVA_APP_KEY || "",
+        },
+        body: JSON.stringify({
+          shop_domain: session.shop,
+          snapshot: snapshotResult,
+        }),
+      });
+      diag.ingest_attempt.http_status = res.status;
+      diag.ingest_attempt.http_ok = res.ok;
+      let body = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = await res.text().catch(() => null);
       }
+      diag.ingest_attempt.body = body;
+      diag.ingest_attempt.ok = res.ok && body?.ingested === true;
     } catch (err) {
-      diag.ingest_attempt = {
-        ok: false,
-        reason: `ingestOnInstall threw: ${err?.message || err}`,
-      };
+      diag.ingest_attempt.ok = false;
+      diag.ingest_attempt.threw = `${err?.message || err}`;
     }
   }
 
