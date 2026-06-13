@@ -51,32 +51,58 @@ export const loader = async ({ request }) => {
     return Response.json(diag);
   }
 
-  // Try the snapshot directly (no gate — bypass the helper's flag check for diagnostic).
+  // Try the snapshot directly + capture the raw GraphQL response, including
+  // errors. This bypasses fetchShopSnapshot's null-swallowing wrapper so we
+  // can see WHY Shopify rejected the query.
+  const SNAPSHOT_QUERY = `#graphql
+    query AsvaShopSnapshotDiag {
+      shop {
+        name
+        primaryDomain { host url }
+        currencyCode
+      }
+      products(first: 20, sortKey: BEST_SELLING) {
+        edges {
+          node {
+            id title handle productType vendor totalInventory
+            featuredImage { url altText }
+            priceRangeV2 { minVariantPrice { amount currencyCode } }
+          }
+        }
+      }
+      collections(first: 10, sortKey: UPDATED_AT, reverse: true) {
+        edges {
+          node {
+            id title handle productsCount { count }
+          }
+        }
+      }
+    }
+  `;
+
   let snapshotResult = null;
   try {
-    snapshotResult = await fetchShopSnapshot(admin);
-    if (!snapshotResult) {
-      diag.snapshot_attempt = {
-        ok: false,
-        reason:
-          "fetchShopSnapshot returned null — could be admin client invalid, GraphQL error, or flag turned off mid-call.",
-      };
+    const res = await admin.graphql(SNAPSHOT_QUERY);
+    const json = await res.json();
+    diag.snapshot_attempt = {
+      raw_status: res.status,
+      data_keys: json?.data ? Object.keys(json.data) : null,
+      errors: json?.errors || null,
+      products_returned: (json?.data?.products?.edges || []).length,
+      collections_returned: (json?.data?.collections?.edges || []).length,
+    };
+    if (json?.data && !json?.errors) {
+      snapshotResult = json.data;
+      diag.snapshot_attempt.ok = true;
     } else {
-      const shop = snapshotResult.shop || {};
-      const products = (snapshotResult.products?.edges || []).length;
-      const collections = (snapshotResult.collections?.edges || []).length;
-      diag.snapshot_attempt = {
-        ok: true,
-        shop_name: shop.name || null,
-        primary_domain: shop.primaryDomain?.host || null,
-        products_count: products,
-        collections_count: collections,
-      };
+      diag.snapshot_attempt.ok = false;
+      diag.snapshot_attempt.reason = "GraphQL errors or no data";
     }
   } catch (err) {
     diag.snapshot_attempt = {
       ok: false,
-      reason: `fetchShopSnapshot threw: ${err?.message || err}`,
+      reason: `admin.graphql threw: ${err?.message || err}`,
+      stack: err?.stack?.split("\n").slice(0, 5).join(" | "),
     };
   }
 
