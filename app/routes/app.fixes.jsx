@@ -7,5 +7,5 @@ import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request }) => {
   await authenticate.admin(request);
-  throw redirect("/app?tab=fixes");
+  throw redirect("/app/agentic-readiness?tab=fixes");
 };

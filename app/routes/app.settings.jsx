@@ -65,14 +65,16 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const shopName = shop.replace(/\.myshopify\.com$/, "");
   // Reopen the dismissed first-run onboarding card by clearing the
-  // localStorage flag and bouncing back to Home where it renders.
+  // localStorage flag and bouncing back to Agentic Readiness Home where the
+  // card renders. (Phase 3 moved /app to the Dashboard iframe; the onboarding
+  // card stays on the Agentic Readiness page.)
   const reopenOnboarding = () => {
     try {
       localStorage.removeItem("asva-onboarding-dismissed");
     } catch {
       /* ignore */
     }
-    navigate("/app");
+    navigate("/app/agentic-readiness?tab=home");
   };
 
   return (
@@ -148,7 +150,7 @@ export default function SettingsPage() {
                 <Box paddingBlockStart="200">
                   <Button
                     variant="primary"
-                    onClick={() => navigate("/app?rescan=1")}
+                    onClick={() => navigate("/app/agentic-readiness?rescan=1")}
                   >
                     Force fresh scan
                   </Button>

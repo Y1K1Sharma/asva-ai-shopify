@@ -1,354 +1,162 @@
 /**
- * Agentic Readiness — the app's home (Phase v2.1.A, revised).
+ * SHOP-PERFECT Phase 3 — Dashboard is now the default landing tab.
  *
- * This IS the /app route (no redirect, no separate child route). The previous
- * attempt at "v2.1.A take 1" replaced this loader with a bare throw redirect(),
- * which skipped Shopify's authenticate.admin() call (loadShopScan calls it
- * internally) and broke the install flow on fresh stores. Reverted in d43c155.
+ * Lifts the iframe Dashboard host from app.dashboard.jsx so opening Asva AI
+ * from the Shopify admin lands users on the metrics dashboard immediately,
+ * not on the Agentic Readiness scanner (which is still available at
+ * /app/agentic-readiness via the nav).
  *
- * Take 2 keeps the loader EXACTLY as it was (loadShopScan(request)) so the
- * auth chain is untouched. The only change vs the original is the render
- * function — we wrap the existing Home content in Polaris Tabs and add 6
- * additional tabs for All Checks, Cross-Protocol, Competitive, Catalog, Fixes,
- * and Playground. Tabs 2-7 are placeholder cards in this phase; they link to
- * the existing /app/checks etc. routes (which stay live as a safety net).
+ * Reversible by flipping Railway env ASVA_DEFAULT_TAB_DASHBOARD=false on the
+ * asva-ai-shopify project — that swap turns /app into a redirect to
+ * /app/agentic-readiness, restoring the pre-Phase-3 landing behaviour without
+ * a redeploy.
  *
- * Tab state lives in ?tab=X. Because every tab reads from this loader's
- * useLoaderData(), a single revalidate() on Rescan refreshes scan state for
- * every tab simultaneously - structurally fixing the Competitive "Run your
- * own scan first" bug Yash hit (will be visible once CompetitiveTab is fully
- * ported in v2.1.E).
+ * The legacy bookmark /app/dashboard is a 301 to /app (see app.dashboard.jsx)
+ * so existing links keep working. /app/dashboard/token (resource route in
+ * app.dashboard.token.jsx) is unchanged — the iframe still refreshes its
+ * shop-scoped JWT from there.
  */
-import { useLoaderData, useNavigation, useRevalidator, useRouteError, useSearchParams } from "react-router";
-import { boundary } from "@shopify/shopify-app-react-router/server";
-import { loadShopScan } from "../scan-loader.server";
+import { useEffect, useRef, useState } from "react";
+import { redirect, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
-import { scanShopifyShop } from "../asva-api.server";
-import { Page, Tabs, Badge } from "@shopify/polaris";
-import { useCallback, useEffect, useMemo } from "react";
-import { HomeTab } from "../components/readiness/HomeTab";
-import { ChecksTab } from "../components/readiness/ChecksTab";
-import { CrossProtocolTab } from "../components/readiness/CrossProtocolTab";
-import { CompetitiveTab } from "../components/readiness/CompetitiveTab";
-import { CatalogTab } from "../components/readiness/CatalogTab";
-import { FixesTab } from "../components/readiness/FixesTab";
-import { PlaygroundTab } from "../components/readiness/PlaygroundTab";
+import { provisionShop } from "../asva-api.server";
+import { fetchShopBasics } from "../lib/shopify-admin.server";
 
-// Catalog data is fetched lazily inside the parent loader when ?tab=catalog
-// is set. We don't pay the GraphQL cost on Home / Checks / etc.
-const CATALOG_PAGE_SIZE = 25;
-const CATALOG_PRODUCTS_QUERY = `#graphql
-  query CatalogProducts($first: Int!, $after: String, $before: String, $last: Int) {
-    products(first: $first, after: $after, before: $before, last: $last, sortKey: TITLE) {
-      edges {
-        cursor
-        node {
-          id
-          title
-          handle
-          status
-          description
-          descriptionHtml
-          tags
-          vendor
-          productType
-          options { id name }
-          variantsCount { count }
-          media(first: 3) {
-            edges {
-              node {
-                ... on MediaImage { id alt image { url width height } }
-              }
-            }
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        hasPreviousPage
-        startCursor
-        endCursor
-      }
-    }
-    productsCount { count precision }
+export const loader = async ({ request }) => {
+  // Phase 3 flag: when off, /app falls back to the legacy landing tab.
+  // eslint-disable-next-line no-undef
+  const flag = (process.env.ASVA_DEFAULT_TAB_DASHBOARD ?? "true").toLowerCase();
+  if (flag === "false" || flag === "0" || flag === "off") {
+    throw redirect("/app/agentic-readiness");
   }
-`;
 
-// Validate + normalize a competitor domain string. Strips protocol/trailing
-// slashes, then asserts a basic domain shape so we don't ship "javascript:..."
-// or path-only inputs to the backend scanner.
-function normalizeCompetitor(raw) {
-  const input = (raw || "").trim();
-  if (!input) return { domain: "", valid: false };
-  const normalized = input.toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(normalized)) {
-    return { domain: input, valid: false };
+  const { session, admin } = await authenticate.admin(request);
+  // SHOP-PERFECT Phase 2: resolve real shop identity for provision payload.
+  let shopBasics = null;
+  if (session?.shop) {
+    shopBasics = await fetchShopBasics(admin);
   }
-  return { domain: normalized.split("/")[0], valid: true };
-}
-
-// Competitor scan is lazy: only runs when ?tab=competitive AND ?competitor=
-// are both set. Returns { domain, scan, error } shaped object the
-// CompetitiveTab consumes via useLoaderData().
-async function fetchCompetitor(url) {
-  const raw = url.searchParams.get("competitor") || "";
-  if (!raw.trim()) return null;
-  const { domain, valid } = normalizeCompetitor(raw);
-  if (!valid) {
-    return { domain, scan: null, error: "Please enter a valid domain (e.g. allbirds.com)." };
-  }
+  let asvaBrand = null;
   try {
-    const scan = await scanShopifyShop(domain);
-    return { domain, scan, error: null };
-  } catch (err) {
-    console.error("[app._index] competitor scan failed:", err);
-    return {
-      domain,
-      scan: null,
-      error: err instanceof Error
-        ? `Couldn't scan ${domain}: ${err.message}`
-        : `Couldn't scan ${domain}.`,
-    };
-  }
-}
-
-async function fetchCatalog(request) {
-  const { admin } = await authenticate.admin(request);
-  const url = new URL(request.url);
-  const after = url.searchParams.get("after");
-  const before = url.searchParams.get("before");
-  const variables = before
-    ? { first: null, last: CATALOG_PAGE_SIZE, before, after: null }
-    : { first: CATALOG_PAGE_SIZE, last: null, after, before: null };
-  try {
-    const response = await admin.graphql(CATALOG_PRODUCTS_QUERY, { variables });
-    const json = await response.json();
-    if (json.errors) {
-      console.error("[app._index] catalog GraphQL errors:", JSON.stringify(json.errors));
-      return {
-        products: [],
-        pageInfo: null,
-        totalCount: 0,
-        loadError: json.errors.map((e) => e.message).join("; "),
+    if (session?.shop) {
+      const p = await provisionShop(session.shop, {
+        shopName: shopBasics?.cleanBrandName || shopBasics?.shopName || session.shop.split(".")[0],
+        storefrontDomain: shopBasics?.primaryDomain || undefined,
+        shopOwnerEmail: shopBasics?.contactEmail || undefined,
+        shopOwnerName: shopBasics?.shopOwnerName || undefined,
+        currencyCode: shopBasics?.currencyCode || undefined,
+        countryCode: shopBasics?.countryCode || undefined,
+      });
+      asvaBrand = {
+        brandId: p.brand_id,
+        token: p.token,
+        brandDomain: p.domain,
+        brandName: p.brand_name,
       };
     }
-    const data = json.data;
-    return {
-      products: (data.products.edges || []).map((e) => e.node),
-      pageInfo: data.products.pageInfo,
-      totalCount: data.productsCount?.count ?? null,
-      precision: data.productsCount?.precision ?? null,
-      loadError: null,
-    };
   } catch (err) {
-    console.error("[app._index] catalog fetch failed:", err);
-    return {
-      products: [],
-      pageInfo: null,
-      totalCount: 0,
-      loadError: err instanceof Error ? err.message : "Failed to load products.",
-    };
+    console.error("[app._index] dashboard provision failed:", err?.message || err);
   }
-}
-
-const TAB_DEFS = [
-  { id: "home", content: "Home", panelID: "tab-home" },
-  { id: "checks", content: "All Checks", panelID: "tab-checks" },
-  { id: "cross-protocol", content: "Cross-Protocol", panelID: "tab-cross-protocol" },
-  { id: "competitive", content: "Competitive", panelID: "tab-competitive" },
-  { id: "catalog", content: "Catalog", panelID: "tab-catalog" },
-  { id: "fixes", content: "Fixes", panelID: "tab-fixes" },
-  { id: "playground", content: "Playground", panelID: "tab-playground" },
-];
-
-const GRADE_TONE = {
-  Excellent: "success",
-  "Very Good": "info",
-  Good: "info",
-  Poor: "attention",
-  "Very Poor": "critical",
+  return { asvaBrand };
 };
 
-// loadShopScan calls authenticate.admin(request) internally, critical for the
-// embedded-app auth flow on first install (see d43c155). The conditional
-// Catalog fetch piggybacks on that authenticated request when ?tab=catalog
-// is set, so other tabs don't pay the Admin GraphQL cost.
-export const loader = async ({ request }) => {
-  const scanData = await loadShopScan(request);
-  const url = new URL(request.url);
-  const tab = url.searchParams.get("tab") || "home";
-  let catalog = null;
-  let competitor = null;
-  if (tab === "catalog") {
-    catalog = await fetchCatalog(request);
-  } else if (tab === "competitive") {
-    competitor = await fetchCompetitor(url);
-  }
-  return { ...scanData, catalog, competitor };
-};
+export default function DashboardHome() {
+  const { asvaBrand } = useLoaderData();
+  const navigate = useNavigate();
+  const iframeRef = useRef(null);
+  const [failed, setFailed] = useState(false);
 
-// Tab switching is purely a UI concern (?tab=X) — don't re-hit the loader on
-// every tab click. We still revalidate on rescan transitions, pathname changes,
-// and Catalog tab transitions (which need a fresh GraphQL fetch).
-export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate }) {
-  if (currentUrl.pathname !== nextUrl.pathname) return defaultShouldRevalidate;
-  // Rescan flow: only revalidate when STARTING a rescan (transitioning into
-  // rescan=1). When the flag is auto-cleared after the rescan completes, we
-  // do NOT want to revalidate — that triggers a second loader call which
-  // returns cached data instantly and overwrites the freshly-scanned result
-  // (the race Yash hit: rescan appeared to complete in milliseconds because
-  // the cached call won).
-  {
-    const curRescan = currentUrl.searchParams.get("rescan");
-    const nextRescan = nextUrl.searchParams.get("rescan");
-    if (curRescan !== nextRescan) {
-      return nextRescan === "1";
-    }
-  }
-  const curTab = currentUrl.searchParams.get("tab") || "home";
-  const nextTab = nextUrl.searchParams.get("tab") || "home";
-  // Catalog tab needs Admin GraphQL data. Revalidate whenever entering or
-  // leaving Catalog, or when pagination params (after / before) change.
-  if (nextTab === "catalog" || curTab === "catalog") {
-    if (curTab !== nextTab) return true;
-    if (
-      currentUrl.searchParams.get("after") !== nextUrl.searchParams.get("after") ||
-      currentUrl.searchParams.get("before") !== nextUrl.searchParams.get("before")
-    ) {
-      return true;
-    }
-  }
-  // Competitive tab needs to rescan the competitor when the ?competitor=
-  // query string changes (form submit or Clear). Tab-only transitions into
-  // Competitive without a competitor query stay instant (no scan needed).
-  if (nextTab === "competitive" || curTab === "competitive") {
-    if (
-      currentUrl.searchParams.get("competitor") !== nextUrl.searchParams.get("competitor")
-    ) {
-      return true;
-    }
-  }
-  const curOther = new URLSearchParams([...currentUrl.searchParams].filter(([k]) => k !== "tab"));
-  const nextOther = new URLSearchParams([...nextUrl.searchParams].filter(([k]) => k !== "tab"));
-  if (curOther.toString() === nextOther.toString()) return false;
-  return defaultShouldRevalidate;
-}
-
-export default function AgenticReadinessHome() {
-  const { shop, shopBasics, scan } = useLoaderData();
-  const navigation = useNavigation();
-  const { revalidate } = useRevalidator();
-  const [searchParams, setSearchParams] = useSearchParams();
-  // Only show the Rescan button's spinner when an ACTUAL rescan is in flight.
-  // Without this, the button flashes "Rescanning…" any time the loader
-  // re-runs — e.g. when entering Catalog (which fetches Admin GraphQL),
-  // which is misleading because no scan is happening.
-  const isRescanInFlight =
-    navigation.state === "loading" &&
-    (navigation.location?.search?.includes("rescan=1") ?? false);
-  const isLoading = navigation.state === "loading";
-
-  // SHOP-PERFECT Phase 2: prefer the real primary custom domain (e.g.
-  // "stylera.co") over the *.myshopify.com handle. shopBasics is null when
-  // ASVA_USE_PRIMARY_DOMAIN is off OR when Admin GraphQL failed, in which
-  // case we fall back to the legacy handle so the UI never goes blank.
-  const handleName = (shop || "").replace(/\.myshopify\.com$/, "");
-  const shopName = shopBasics?.primaryDomain || shopBasics?.shopName || handleName;
-  const grade = scan?.grade;
-  const gradeTone = grade ? GRADE_TONE[grade] || "info" : null;
-
-  const activeTabId = searchParams.get("tab") || "home";
-  const selectedIndex = Math.max(
-    0,
-    TAB_DEFS.findIndex((t) => t.id === activeTabId),
-  );
-
-  const handleTabChange = useCallback(
-    (idx) => {
-      const tabId = TAB_DEFS[idx].id;
-      const next = new URLSearchParams(searchParams);
-      next.set("tab", tabId);
-      // Tab-scoped query params don't carry over to other tabs. Without this,
-      // ?competitor=hrx.com lingers on Catalog/Home etc., and re-entering
-      // Competitive re-runs the previous scan + shows stale comparison.
-      if (tabId !== "competitive") next.delete("competitor");
-      if (tabId !== "catalog") {
-        next.delete("after");
-        next.delete("before");
-      }
-      setSearchParams(next, { replace: true });
-    },
-    [searchParams, setSearchParams],
-  );
-
-  // Rescan: set ?rescan=1 + revalidate. The flag stays in the URL until the
-  // revalidation finishes (see the useEffect below); we don't auto-clear it
-  // with setTimeout because that races the fresh scan and wins (cached path
-  // returns instantly, overwriting fresh data).
-  const handleRescan = useCallback(() => {
-    const next = new URLSearchParams(searchParams);
-    next.set("rescan", "1");
-    setSearchParams(next, { replace: true });
-    revalidate();
-  }, [searchParams, setSearchParams, revalidate]);
-
-  // Clear the rescan flag AFTER the loader has finished. This runs once
-  // navigation.state goes back to "idle". Without this the URL keeps
-  // ?rescan=1 forever (and subsequent tab clicks would force a fresh
-  // scan every time, blowing the cache).
   useEffect(() => {
-    if (navigation.state === "idle" && searchParams.get("rescan") === "1") {
-      const cleared = new URLSearchParams(searchParams);
-      cleared.delete("rescan");
-      setSearchParams(cleared, { replace: true });
-    }
-  }, [navigation.state, searchParams, setSearchParams]);
+    if (!asvaBrand) return;
 
-  const activeTabBody = useMemo(() => {
-    switch (activeTabId) {
-      case "home":
-        return <HomeTab />;
-      case "checks":
-        return <ChecksTab />;
-      case "cross-protocol":
-        return <CrossProtocolTab />;
-      case "competitive":
-        return <CompetitiveTab />;
-      case "catalog":
-        return <CatalogTab />;
-      case "fixes":
-        return <FixesTab />;
-      case "playground":
-        return <PlaygroundTab />;
-      default:
-        return <HomeTab />;
+    function postAuth(token) {
+      const win = iframeRef.current?.contentWindow;
+      if (!win) return;
+      win.postMessage(
+        {
+          type: "asva-embedded-auth",
+          token,
+          brandId: asvaBrand.brandId,
+          brandName: asvaBrand.brandName,
+          brandDomain: asvaBrand.brandDomain,
+        },
+        window.location.origin,
+      );
     }
-  }, [activeTabId]);
+
+    async function onMessage(ev) {
+      if (ev.origin !== window.location.origin) return;
+      const type = ev.data?.type;
+      if (type === "asva-embedded-ready") {
+        postAuth(asvaBrand.token);
+      } else if (type === "asva-embedded-navigate") {
+        const to = ev.data?.to;
+        if (typeof to === "string" && to.startsWith("/app")) navigate(to);
+      } else if (type === "asva-embedded-refresh") {
+        try {
+          const res = await fetch("/app/dashboard/token");
+          if (res.ok) {
+            const fresh = await res.json();
+            if (fresh?.token) postAuth(fresh.token);
+          }
+        } catch (err) {
+          console.error("[app._index] dashboard token refresh failed:", err);
+        }
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [asvaBrand, navigate]);
+
+  if (!asvaBrand) {
+    return (
+      <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+        <h2>Setting up your Asva AI dashboard…</h2>
+        <p>
+          We couldn&apos;t reach the analytics backend just now. Reopen the app
+          from your Shopify admin in a moment. The Agentic Readiness scanner
+          is still available from the app menu.
+        </p>
+      </div>
+    );
+  }
+
+  const slug = (asvaBrand.brandName || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-");
+  const embedSrc = slug ? `/embed/${slug}` : "/embed/";
 
   return (
-    <Page
-      title="Agentic Readiness"
-      titleMetadata={grade ? <Badge tone={gradeTone}>{grade}</Badge> : null}
-      subtitle={shopName ? `Connected to ${shopName}` : undefined}
-      primaryAction={{
-        content: isRescanInFlight ? "Rescanning…" : "Rescan",
-        onAction: handleRescan,
-        loading: isRescanInFlight,
+    <iframe
+      ref={iframeRef}
+      src={embedSrc}
+      title="Asva AI Dashboard"
+      onError={() => setFailed(true)}
+      onLoad={() => {
+        const win = iframeRef.current?.contentWindow;
+        if (win && asvaBrand) {
+          win.postMessage(
+            {
+              type: "asva-embedded-auth",
+              token: asvaBrand.token,
+              brandId: asvaBrand.brandId,
+              brandName: asvaBrand.brandName,
+              brandDomain: asvaBrand.brandDomain,
+            },
+            window.location.origin,
+          );
+        }
       }}
-    >
-      <Tabs
-        tabs={TAB_DEFS}
-        selected={selectedIndex}
-        onSelect={handleTabChange}
-        fitted={false}
-      />
-      <div style={{ paddingTop: "var(--p-space-400)" }}>{activeTabBody}</div>
-    </Page>
+      style={{
+        width: "100%",
+        height: "100vh",
+        border: "none",
+        display: "block",
+      }}
+    />
   );
-}
-
-export const headers = (headersArgs) => boundary.headers(headersArgs);
-
-export function ErrorBoundary() {
-  return boundary.error(useRouteError());
 }

@@ -69,8 +69,8 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={enTranslations}>
         <s-app-nav>
-          <s-link href="/app">Agentic Readiness</s-link>
-          <s-link href="/app/dashboard">Dashboard</s-link>
+          <s-link href="/app">Dashboard</s-link>
+          <s-link href="/app/agentic-readiness">Agentic Readiness</s-link>
           <s-link href="/app/settings">Settings</s-link>
         </s-app-nav>
         <Outlet />

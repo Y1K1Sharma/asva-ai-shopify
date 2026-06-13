@@ -103,7 +103,7 @@ export function FixesTab() {
   // so the merchant can immediately see the updated fix list.
   const handleRescanNow = () => {
     clearPending();
-    navigate("/app?tab=fixes&rescan=1");
+    navigate("/app/agentic-readiness?tab=fixes&rescan=1");
   };
 
   if (loadError) {

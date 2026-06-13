@@ -1,163 +1,18 @@
 /**
- * Embedded full dashboard (Phase B.3).
+ * SHOP-PERFECT Phase 3 — legacy bookmark redirect.
  *
- * Renders the Asvaai dashboard SPA inside an iframe that points at THIS app's
- * own /embed/ reverse proxy (same-origin). On mount, the SPA posts
- * `asva-embedded-ready`; this host replies with `asva-embedded-auth` carrying
- * the shop-scoped JWT minted by the backend (POST /shopify/provision). The SPA
- * then reads the shop's brand data via the same backend endpoints the web app
- * uses. On `asva-embedded-refresh` (401), the host fetches a fresh token from
- * the /app/dashboard/token resource route and re-posts.
+ * Phase 3 moved the embedded Dashboard host onto /app (see app._index.jsx)
+ * so opening Asva AI from Shopify admin lands directly on the metrics
+ * dashboard. /app/dashboard now permanently redirects to /app for any
+ * bookmark, hand-off link, or embedded-SPA navigation that still targets
+ * the old URL.
  *
- * Token is delivered ONLY via postMessage (never in the iframe URL).
+ * The token-refresh resource route at /app/dashboard/token
+ * (app.dashboard.token.jsx) is UNAFFECTED — file-based routing in React
+ * Router 7 matches it directly, bypassing this loader.
  */
-import { useEffect, useRef, useState } from "react";
-import { useLoaderData, useNavigate } from "react-router";
-import { authenticate } from "../shopify.server";
-import { provisionShop } from "../asva-api.server";
-import { fetchShopBasics } from "../lib/shopify-admin.server";
+import { redirect } from "react-router";
 
-export const loader = async ({ request }) => {
-  const { session, admin } = await authenticate.admin(request);
-  // SHOP-PERFECT Phase 2: resolve real shop identity for provision payload.
-  let shopBasics = null;
-  if (session?.shop) {
-    shopBasics = await fetchShopBasics(admin);
-  }
-  let asvaBrand = null;
-  try {
-    if (session?.shop) {
-      const p = await provisionShop(session.shop, {
-        // Prefer the CLEAN brand name derived from the primary domain
-        // (e.g. "stylera.co" -> "Stylera") over Shopify's shop.name field
-        // which often includes " (Dev Test)" / " Store" noise on dev stores.
-        shopName: shopBasics?.cleanBrandName || shopBasics?.shopName || session.shop.split(".")[0],
-        storefrontDomain: shopBasics?.primaryDomain || undefined,
-        shopOwnerEmail: shopBasics?.contactEmail || undefined,
-        shopOwnerName: shopBasics?.shopOwnerName || undefined,
-        currencyCode: shopBasics?.currencyCode || undefined,
-        countryCode: shopBasics?.countryCode || undefined,
-      });
-      asvaBrand = {
-        brandId: p.brand_id,
-        token: p.token,
-        brandDomain: p.domain,
-        brandName: p.brand_name,
-      };
-    }
-  } catch (err) {
-    console.error("[app.dashboard] provision failed:", err?.message || err);
-  }
-  return { asvaBrand };
+export const loader = async () => {
+  throw redirect("/app", 301);
 };
-
-export default function Dashboard() {
-  const { asvaBrand } = useLoaderData();
-  const navigate = useNavigate();
-  const iframeRef = useRef(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!asvaBrand) return;
-
-    function postAuth(token) {
-      const win = iframeRef.current?.contentWindow;
-      if (!win) return;
-      win.postMessage(
-        {
-          type: "asva-embedded-auth",
-          token,
-          brandId: asvaBrand.brandId,
-          brandName: asvaBrand.brandName,
-          brandDomain: asvaBrand.brandDomain,
-        },
-        window.location.origin,
-      );
-    }
-
-    async function onMessage(ev) {
-      // The proxied SPA is same-origin, so only trust same-origin messages.
-      if (ev.origin !== window.location.origin) return;
-      const type = ev.data?.type;
-      if (type === "asva-embedded-ready") {
-        postAuth(asvaBrand.token);
-      } else if (type === "asva-embedded-navigate") {
-        // Agentic Readiness hand-off: the embedded dashboard asks us to open one
-        // of the native app pages (All Checks / Fixes / Catalog). Only allow
-        // in-app paths so the iframe can't drive arbitrary navigation.
-        const to = ev.data?.to;
-        if (typeof to === "string" && to.startsWith("/app")) navigate(to);
-      } else if (type === "asva-embedded-refresh") {
-        try {
-          const res = await fetch("/app/dashboard/token");
-          if (res.ok) {
-            const fresh = await res.json();
-            if (fresh?.token) postAuth(fresh.token);
-          }
-        } catch (err) {
-          console.error("[app.dashboard] token refresh failed:", err);
-        }
-      }
-    }
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [asvaBrand, navigate]);
-
-  if (!asvaBrand) {
-    return (
-      <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
-        <h2>Setting up your Asva AI dashboard…</h2>
-        <p>
-          We couldn&apos;t reach the analytics backend just now. Reopen the app
-          from your Shopify admin in a moment. Your AI Readiness scanner is
-          still available from the app menu.
-        </p>
-      </div>
-    );
-  }
-
-  // Load the iframe straight at the shop's brand dashboard (/embed/<slug>) so
-  // it skips the company-picker. Slug matches the SPA's toCompanySlug().
-  const slug = (asvaBrand.brandName || "")
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-");
-  const embedSrc = slug ? `/embed/${slug}` : "/embed/";
-
-  return (
-    <iframe
-      ref={iframeRef}
-      src={embedSrc}
-      title="Asva AI Dashboard"
-      onError={() => setFailed(true)}
-      onLoad={() => {
-        // Proactively push the token once the iframe has loaded — covers the
-        // race where the SPA's 'ready' message fires before this host's
-        // message listener is attached. The SPA's listener is set in its
-        // bootstrap (before onLoad), so this is always received.
-        const win = iframeRef.current?.contentWindow;
-        if (win && asvaBrand) {
-          win.postMessage(
-            {
-              type: "asva-embedded-auth",
-              token: asvaBrand.token,
-              brandId: asvaBrand.brandId,
-              brandName: asvaBrand.brandName,
-              brandDomain: asvaBrand.brandDomain,
-            },
-            window.location.origin,
-          );
-        }
-      }}
-      style={{
-        width: "100%",
-        height: "100vh",
-        border: "none",
-        display: "block",
-      }}
-    />
-  );
-}
