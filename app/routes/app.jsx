@@ -2,8 +2,8 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
-import { provisionShop } from "../asva-api.server";
-import { fetchShopBasics } from "../lib/shopify-admin.server";
+import { ingestOnInstall, provisionShop } from "../asva-api.server";
+import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -52,6 +52,28 @@ export const loader = async ({ request }) => {
       "[app loader] shopify provision failed (non-fatal):",
       err?.message || err,
     );
+  }
+
+  // SHOP-PERFECT Phase 4 — fire-and-forget instant ingest.
+  //
+  // When ASVA_INSTANT_INGEST=true the backend gets a fresh Admin snapshot
+  // (~150 API points) and seeds parent_brand.industry/keywords/top_pages +
+  // merchant_catalog_entries + queues the first-audit job. Gating lives
+  // inside fetchShopSnapshot — returns null when the flag is off so this
+  // chain is a no-op cost-free no-op in the default state.
+  //
+  // Deliberately NOT awaited: the loader must return immediately so the
+  // dashboard renders. Backend writes converge on the next page navigation
+  // (the polling /audit-status endpoint surfaces progress).
+  if (session?.shop && asvaBrand) {
+    fetchShopSnapshot(admin)
+      .then((snapshot) => (snapshot ? ingestOnInstall(session.shop, snapshot) : null))
+      .catch((err) =>
+        console.error(
+          "[app loader] instant ingest failed (non-fatal):",
+          err?.message || err,
+        ),
+      );
   }
 
   // eslint-disable-next-line no-undef

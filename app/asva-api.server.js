@@ -98,6 +98,58 @@ export async function scanShopifyShop(shopDomain) {
  * @returns {Promise<object>} { brand_id, brand_name, domain, shop_domain, claimed_existing, token, expires_in }
  * @throws {Error} on HTTP failure (e.g. ASVA_APP_KEY unset -> 401).
  */
+/**
+ * SHOP-PERFECT Phase 4 — fire the Shopify Admin snapshot at the backend so it
+ * can seed `parent_brand.industry/keywords/top_pages`, write
+ * `merchant_catalog_entries`, mark the Shopify `merchant_connections` row
+ * ready, and queue the first-audit job.
+ *
+ * Caller MUST treat this as fire-and-forget: backend writes are best-effort
+ * and a failure here should never block dashboard render. Returns the parsed
+ * JSON response (or null on error) so the caller can log.
+ *
+ * Requires ASVA_APP_KEY to be set (server-to-server auth) AND a prior call to
+ * /provision (the backend rejects with 409 if the shop is not provisioned yet).
+ *
+ * @param {string} shopDomain - the *.myshopify.com domain (must already be provisioned)
+ * @param {object} snapshot   - raw Admin GraphQL response (data.shop, data.products, data.collections)
+ * @returns {Promise<object|null>}
+ */
+export async function ingestOnInstall(shopDomain, snapshot) {
+  if (!ASVA_APP_KEY) {
+    console.warn("[asva-api] ingestOnInstall skipped: ASVA_APP_KEY not configured");
+    return null;
+  }
+  if (!shopDomain || !snapshot) return null;
+  try {
+    const url = `${ASVA_API_BASE}/api/v5/shopify/ingest-on-install`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: buildHeaders(),
+      body: JSON.stringify({
+        shop_domain: shopDomain,
+        snapshot,
+      }),
+    });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = body.detail;
+      } catch {
+        /* ignore */
+      }
+      console.error(`[asva-api] ingestOnInstall failed for ${shopDomain}: ${detail}`);
+      return null;
+    }
+    return await res.json();
+  } catch (err) {
+    console.error(`[asva-api] ingestOnInstall threw for ${shopDomain}:`, err?.message || err);
+    return null;
+  }
+}
+
+
 export async function provisionShop(shopDomain, opts = {}) {
   if (!ASVA_APP_KEY) {
     throw new Error("ASVA_APP_KEY not configured — Shopify bridge disabled");

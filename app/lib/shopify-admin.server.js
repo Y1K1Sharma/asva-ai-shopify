@@ -127,3 +127,81 @@ export async function fetchShopBasics(admin) {
     return null;
   }
 }
+
+// SHOP-PERFECT Phase 4 — full snapshot query for on-install ingest.
+//
+// Asks for the shop + top 20 best-selling products + 10 most-recently-updated
+// collections in one round trip. Themes are intentionally NOT included — they'd
+// require an extra read_themes scope that we don't ship today, and the
+// dashboard doesn't render theme info yet (deferred to a later phase). The
+// query budget stays under ~150 Admin API points which is well within the
+// 1000pt/min per-shop ceiling.
+const SHOP_SNAPSHOT_QUERY = `#graphql
+  query AsvaShopSnapshot {
+    shop {
+      name
+      primaryDomain { host url }
+      currencyCode
+      contactEmail
+      shopOwnerName
+      billingAddress { country countryCodeV2 }
+    }
+    products(first: 20, sortKey: BEST_SELLING) {
+      edges {
+        node {
+          id
+          title
+          handle
+          productType
+          vendor
+          totalInventory
+          featuredImage { url altText }
+          priceRangeV2 { minVariantPrice { amount currencyCode } }
+        }
+      }
+    }
+    collections(first: 10, sortKey: UPDATED_AT, reverse: true) {
+      edges {
+        node {
+          id
+          title
+          handle
+          productsCount { count }
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * Fetch the full Shopify shop snapshot used by /api/v5/shopify/ingest-on-install.
+ *
+ * Gated by Railway env ASVA_INSTANT_INGEST (default OFF). When OFF, returns
+ * null so callers skip the ingest call entirely — keeps the Cloro budget safe
+ * until Phase 5's full audit pipeline ships. Resolves to null on any GraphQL
+ * failure so a single bad response can't block the loader.
+ *
+ * @param {object} admin
+ * @returns {Promise<null | object>} raw GraphQL response body (data.shop / data.products / data.collections)
+ */
+export async function fetchShopSnapshot(admin) {
+  // eslint-disable-next-line no-undef
+  const flag = (process.env.ASVA_INSTANT_INGEST ?? "false").toLowerCase();
+  if (flag !== "true" && flag !== "1" && flag !== "on") return null;
+  if (!admin || typeof admin.graphql !== "function") return null;
+
+  try {
+    const res = await admin.graphql(SHOP_SNAPSHOT_QUERY);
+    const json = await res.json();
+    if (json.errors) {
+      console.error("[shopify-admin] fetchShopSnapshot graphql errors:", JSON.stringify(json.errors));
+      return null;
+    }
+    // Hand the data block directly to the backend — the Python parser in
+    // lib/shopify_ingest.parse_shop_snapshot() expects exactly this shape.
+    return json?.data || null;
+  } catch (err) {
+    console.error("[shopify-admin] fetchShopSnapshot threw (non-fatal):", err?.message || err);
+    return null;
+  }
+}
