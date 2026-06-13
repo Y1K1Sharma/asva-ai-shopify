@@ -15,14 +15,25 @@ import { useEffect, useRef, useState } from "react";
 import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import { provisionShop } from "../asva-api.server";
+import { fetchShopBasics } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+  // SHOP-PERFECT Phase 2: resolve real shop identity for provision payload.
+  let shopBasics = null;
+  if (session?.shop) {
+    shopBasics = await fetchShopBasics(admin);
+  }
   let asvaBrand = null;
   try {
     if (session?.shop) {
       const p = await provisionShop(session.shop, {
-        shopName: session.shop.split(".")[0],
+        shopName: shopBasics?.shopName || session.shop.split(".")[0],
+        storefrontDomain: shopBasics?.primaryDomain || undefined,
+        shopOwnerEmail: shopBasics?.contactEmail || undefined,
+        shopOwnerName: shopBasics?.shopOwnerName || undefined,
+        currencyCode: shopBasics?.currencyCode || undefined,
+        countryCode: shopBasics?.countryCode || undefined,
       });
       asvaBrand = {
         brandId: p.brand_id,

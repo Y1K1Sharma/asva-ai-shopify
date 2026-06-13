@@ -3,22 +3,42 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
 import { provisionShop } from "../asva-api.server";
+import { fetchShopBasics } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+
+  // SHOP-PERFECT Phase 2 — resolve the shop's REAL identity (primary custom
+  // domain, owner email, currency, country) via Admin GraphQL. Gated by
+  // ASVA_USE_PRIMARY_DOMAIN (default ON). Falls back to null on flag-off or
+  // graphql failure so the legacy code path still ships.
+  let shopBasics = null;
+  if (session?.shop) {
+    shopBasics = await fetchShopBasics(admin);
+  }
 
   // Link this shop to its Asvaai brand + mint a shop-scoped token for the
   // embedded dashboard (Phase B consumes `asvaBrand`). NON-FATAL: provisioning
   // needs ASVA_APP_KEY + a healthy backend; if either is missing the scanner
   // pages must still render, so we swallow any error and return null.
+  //
+  // Phase 2 enrichment: forward the real shop-owner email + primary domain so
+  // the backend stores them on shopify_merchants. Absent fields (when the
+  // flag is off OR Admin GraphQL failed) preserve the pre-Phase-2 payload.
   let asvaBrand = null;
   try {
     if (session?.shop) {
       const p = await provisionShop(session.shop, {
-        shopName: session.shop.split(".")[0],
+        shopName: shopBasics?.shopName || session.shop.split(".")[0],
+        storefrontDomain: shopBasics?.primaryDomain || undefined,
+        shopOwnerEmail: shopBasics?.contactEmail || undefined,
+        shopOwnerName: shopBasics?.shopOwnerName || undefined,
+        currencyCode: shopBasics?.currencyCode || undefined,
+        countryCode: shopBasics?.countryCode || undefined,
       });
       asvaBrand = {
         brandId: p.brand_id,
+        brandName: p.brand_name,
         token: p.token,
         expiresIn: p.expires_in,
         domain: p.domain,
@@ -32,7 +52,7 @@ export const loader = async ({ request }) => {
   }
 
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", asvaBrand };
+  return { apiKey: process.env.SHOPIFY_API_KEY || "", asvaBrand, shopBasics };
 };
 
 import "@shopify/polaris/build/esm/styles.css";

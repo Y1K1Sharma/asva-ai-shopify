@@ -91,6 +91,10 @@ export async function scanShopifyShop(shopDomain) {
  * @param {object} [opts]
  * @param {string} [opts.storefrontDomain] - public storefront/custom domain for the brand
  * @param {string} [opts.shopName]         - display name of the shop
+ * @param {string} [opts.shopOwnerEmail]   - SHOP-PERFECT Phase 2: real shop-owner email (for asvaai.com forgot-password bridge)
+ * @param {string} [opts.shopOwnerName]    - SHOP-PERFECT Phase 2: real shop-owner name
+ * @param {string} [opts.currencyCode]     - SHOP-PERFECT Phase 2: shop currency (ISO 4217)
+ * @param {string} [opts.countryCode]      - SHOP-PERFECT Phase 2: shop billing country (ISO 3166-1 alpha-2)
  * @returns {Promise<object>} { brand_id, brand_name, domain, shop_domain, claimed_existing, token, expires_in }
  * @throws {Error} on HTTP failure (e.g. ASVA_APP_KEY unset -> 401).
  */
@@ -106,6 +110,12 @@ export async function provisionShop(shopDomain, opts = {}) {
       shop_domain: shopDomain,
       domain: opts.storefrontDomain || undefined,
       shop_name: opts.shopName || undefined,
+      // SHOP-PERFECT Phase 2 — additive; backend treats absent fields as
+      // pre-Phase-2 behaviour (no metadata backfill).
+      shop_owner_email: opts.shopOwnerEmail || undefined,
+      shop_owner_name: opts.shopOwnerName || undefined,
+      currency_code: opts.currencyCode || undefined,
+      country_code: opts.countryCode || undefined,
     }),
   });
   if (!res.ok) {

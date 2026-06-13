@@ -235,7 +235,7 @@ export function shouldRevalidate({ currentUrl, nextUrl, defaultShouldRevalidate 
 }
 
 export default function AgenticReadinessHome() {
-  const { shop, scan } = useLoaderData();
+  const { shop, shopBasics, scan } = useLoaderData();
   const navigation = useNavigation();
   const { revalidate } = useRevalidator();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -248,7 +248,12 @@ export default function AgenticReadinessHome() {
     (navigation.location?.search?.includes("rescan=1") ?? false);
   const isLoading = navigation.state === "loading";
 
-  const shopName = (shop || "").replace(/\.myshopify\.com$/, "");
+  // SHOP-PERFECT Phase 2: prefer the real primary custom domain (e.g.
+  // "stylera.co") over the *.myshopify.com handle. shopBasics is null when
+  // ASVA_USE_PRIMARY_DOMAIN is off OR when Admin GraphQL failed, in which
+  // case we fall back to the legacy handle so the UI never goes blank.
+  const handleName = (shop || "").replace(/\.myshopify\.com$/, "");
+  const shopName = shopBasics?.primaryDomain || shopBasics?.shopName || handleName;
   const grade = scan?.grade;
   const gradeTone = grade ? GRADE_TONE[grade] || "info" : null;
 
