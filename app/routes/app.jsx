@@ -54,7 +54,7 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // SHOP-PERFECT Phase 4 — fire-and-forget instant ingest.
+  // SHOP-PERFECT Phase 4 — instant ingest.
   //
   // When ASVA_INSTANT_INGEST=true the backend gets a fresh Admin snapshot
   // (~150 API points) and seeds parent_brand.industry/keywords/top_pages +
@@ -62,18 +62,30 @@ export const loader = async ({ request }) => {
   // inside fetchShopSnapshot — returns null when the flag is off so this
   // chain is a no-op cost-free no-op in the default state.
   //
-  // Deliberately NOT awaited: the loader must return immediately so the
-  // dashboard renders. Backend writes converge on the next page navigation
-  // (the polling /audit-status endpoint surfaces progress).
+  // AWAITED (not fire-and-forget) so the promise actually completes inside
+  // the request lifecycle. The initial fire-and-forget pattern silently
+  // dropped under React Router 7's server runtime — the loader returned, the
+  // response was sent, and the dangling promise never ran. Cost is ~200-400ms
+  // extra on the FIRST app load when the flag is on; subsequent loads hit
+  // the backend dedup path and return fast. Errors are swallowed so a bad
+  // backend response can't block dashboard render.
   if (session?.shop && asvaBrand) {
-    fetchShopSnapshot(admin)
-      .then((snapshot) => (snapshot ? ingestOnInstall(session.shop, snapshot) : null))
-      .catch((err) =>
-        console.error(
-          "[app loader] instant ingest failed (non-fatal):",
-          err?.message || err,
-        ),
+    try {
+      const snapshot = await fetchShopSnapshot(admin);
+      if (snapshot) {
+        const result = await ingestOnInstall(session.shop, snapshot);
+        if (result?.ingested) {
+          console.log(
+            `[app loader] instant ingest OK for ${session.shop}: ${result.products_count} products, ${result.catalog_rows_written} catalog rows, audit_job=${result.audit_job_id}`,
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        "[app loader] instant ingest failed (non-fatal):",
+        err?.message || err,
       );
+    }
   }
 
   // eslint-disable-next-line no-undef

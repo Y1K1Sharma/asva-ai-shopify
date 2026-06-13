@@ -35,7 +35,13 @@ export const loader = async ({ request }) => {
   // eslint-disable-next-line no-undef
   const flag = (process.env.ASVA_DEFAULT_TAB_DASHBOARD ?? "true").toLowerCase();
   if (flag === "false" || flag === "0" || flag === "off") {
-    throw redirect("/app/agentic-readiness");
+    // PRESERVE Shopify's embedded query params (?shop=, ?host=, ?embedded=)
+    // on the redirect. Without them the next route loses session context and
+    // authenticate.admin() bounces to /auth/login, which our public _index
+    // route then renders as the "Install Asva AI" marketing page inside
+    // admin.shopify.com. Hit by Yash during Phase-3 rollback verify.
+    const url = new URL(request.url);
+    throw redirect("/app/agentic-readiness" + url.search);
   }
   // SHOP-PERFECT Phase 2: resolve real shop identity for provision payload.
   let shopBasics = null;
