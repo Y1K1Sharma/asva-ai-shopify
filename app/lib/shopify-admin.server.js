@@ -146,7 +146,7 @@ const SHOP_SNAPSHOT_QUERY = `#graphql
       shopOwnerName
       billingAddress { country countryCodeV2 }
     }
-    products(first: 20, sortKey: BEST_SELLING) {
+    products(first: 20, sortKey: UPDATED_AT, reverse: true) {
       edges {
         node {
           id

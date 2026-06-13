@@ -60,7 +60,7 @@ export const loader = async ({ request }) => {
         primaryDomain { host url }
         currencyCode
       }
-      products(first: 20, sortKey: BEST_SELLING) {
+      products(first: 20, sortKey: UPDATED_AT, reverse: true) {
         edges {
           node {
             id title handle productType vendor totalInventory
