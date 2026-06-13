@@ -23,14 +23,20 @@ import { provisionShop } from "../asva-api.server";
 import { fetchShopBasics } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
+  // Authenticate FIRST. Throwing redirect before authenticate.admin() runs
+  // bounces the request out of the embedded-session handshake — Shopify then
+  // falls through to /auth/login which the public marketing _index renders.
+  // Hit during Phase-3 rollback testing when ASVA_DEFAULT_TAB_DASHBOARD=false
+  // bypassed auth and produced the "Install Asva AI" marketing page inside
+  // admin.shopify.com instead of redirecting to /app/agentic-readiness.
+  const { session, admin } = await authenticate.admin(request);
+
   // Phase 3 flag: when off, /app falls back to the legacy landing tab.
   // eslint-disable-next-line no-undef
   const flag = (process.env.ASVA_DEFAULT_TAB_DASHBOARD ?? "true").toLowerCase();
   if (flag === "false" || flag === "0" || flag === "off") {
     throw redirect("/app/agentic-readiness");
   }
-
-  const { session, admin } = await authenticate.admin(request);
   // SHOP-PERFECT Phase 2: resolve real shop identity for provision payload.
   let shopBasics = null;
   if (session?.shop) {
