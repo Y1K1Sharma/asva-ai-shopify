@@ -23,6 +23,10 @@ import { Banner, ProgressBar, BlockStack, Text, InlineStack } from "@shopify/pol
 const POLL_INTERVAL_MS = 4_000;
 // Terminal states — once we hit one of these we stop polling.
 const TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
+// Hide the success banner this many seconds after the audit completed, so
+// merchants who navigate around the dashboard later don't keep seeing the
+// "first audit submitted" pill weeks later.
+const SUCCESS_AUTO_HIDE_SEC = 90;
 
 function _isTerminal(s) {
   return s && s.found && TERMINAL_STATES.has(s.status);
@@ -32,6 +36,17 @@ export function ScanningProgress({ initialStatus }) {
   const [status, setStatus] = useState(initialStatus || null);
   const timerRef = useRef(null);
   const mountedRef = useRef(true);
+  // Track which audit_job_id the merchant has explicitly dismissed. Survives
+  // re-renders within this mount; sessionStorage persists across navigation.
+  const dismissedRef = useRef(
+    (() => {
+      try {
+        return sessionStorage.getItem("asva.audit.dismissed") || null;
+      } catch {
+        return null;
+      }
+    })(),
+  );
 
   const poll = useCallback(async () => {
     try {
@@ -116,8 +131,34 @@ export function ScanningProgress({ initialStatus }) {
   }
 
   if (s === "completed") {
+    // Auto-hide the success banner once we're past completed_at by N minutes,
+    // and surface a dismiss X via Polaris Banner.onDismiss so merchants can
+    // close it earlier. Once dismissed, sessionStorage remembers per audit
+    // job id so the banner doesn't pop back up on a tab swap.
+    if (dismissedRef.current === status.audit_job_id) return null;
+    const completedAt = status.completed_at ? Date.parse(status.completed_at) : 0;
+    const ageSec = completedAt ? (Date.now() - completedAt) / 1000 : 0;
+    if (ageSec > SUCCESS_AUTO_HIDE_SEC) return null;
     return (
-      <Banner tone="success" title="First audit scan submitted">
+      <Banner
+        tone="success"
+        title="First audit scan submitted"
+        onDismiss={() => {
+          dismissedRef.current = status.audit_job_id || true;
+          try {
+            if (status.audit_job_id) {
+              sessionStorage.setItem(
+                "asva.audit.dismissed",
+                status.audit_job_id,
+              );
+            }
+          } catch {
+            /* private mode */
+          }
+          // Force re-render by bumping status reference shallowly.
+          setStatus({ ...status, __dismissed: true });
+        }}
+      >
         <Text as="p">
           Real visibility data is landing now — refresh the dashboard in 1–3 minutes
           to see the first scores fill in.
