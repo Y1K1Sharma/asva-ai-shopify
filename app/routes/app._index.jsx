@@ -65,6 +65,12 @@ export const loader = async ({ request }) => {
         token: p.token,
         brandDomain: p.domain,
         brandName: p.brand_name,
+        // Pass the real shop owner email through to the embedded SPA so the
+        // sidebar shows "stylera-sub@aurumfms.com" instead of the legacy
+        // hardcoded "shopify@embedded.asvaai" placeholder. Falls back to
+        // empty string when Shopify Admin didn't return a contactEmail.
+        shopOwnerEmail: (shopBasics?.contactEmail || "").trim().toLowerCase() || "",
+        shopOwnerName: (shopBasics?.shopOwnerName || "").trim() || "",
       };
     }
   } catch (err) {
@@ -111,6 +117,8 @@ export default function DashboardHome() {
           brandId: asvaBrand.brandId,
           brandName: asvaBrand.brandName,
           brandDomain: asvaBrand.brandDomain,
+          shopOwnerEmail: asvaBrand.shopOwnerEmail,
+          shopOwnerName: asvaBrand.shopOwnerName,
         },
         window.location.origin,
       );
@@ -182,6 +190,8 @@ export default function DashboardHome() {
                 brandId: asvaBrand.brandId,
                 brandName: asvaBrand.brandName,
                 brandDomain: asvaBrand.brandDomain,
+                shopOwnerEmail: asvaBrand.shopOwnerEmail || "",
+                shopOwnerName: asvaBrand.shopOwnerName || "",
               },
               window.location.origin,
             );
