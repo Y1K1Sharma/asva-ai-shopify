@@ -17,17 +17,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Banner, ProgressBar, BlockStack, Text, InlineStack } from "@shopify/polaris";
 
-const POLL_INTERVAL_MS = 10_000;
-const POLLING_STATES = new Set(["queued", "running"]);
+// Faster than the original 10s — the curated multi-platform path can finish
+// the whole audit in under a minute, so a 10s tick risked the banner never
+// catching any non-terminal state.
+const POLL_INTERVAL_MS = 4_000;
+// Terminal states — once we hit one of these we stop polling.
+const TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
+
+function _isTerminal(s) {
+  return s && s.found && TERMINAL_STATES.has(s.status);
+}
 
 export function ScanningProgress({ initialStatus }) {
   const [status, setStatus] = useState(initialStatus || null);
   const timerRef = useRef(null);
+  const mountedRef = useRef(true);
 
   const poll = useCallback(async () => {
     try {
       const res = await fetch("/app/audit-status", { method: "GET" });
-      if (res.ok) {
+      if (res.ok && mountedRef.current) {
         const body = await res.json();
         setStatus(body);
       }
@@ -37,12 +46,51 @@ export function ScanningProgress({ initialStatus }) {
   }, []);
 
   useEffect(() => {
-    if (!status || !POLLING_STATES.has(status.status)) return;
+    mountedRef.current = true;
+    // Always do an immediate poll on mount unless we already have a
+    // terminal snapshot — the SSR loader's initialStatus may have raced
+    // ingest_on_install and returned `found: false` before the audit job
+    // existed, OR the audit may have completed in seconds. Either way,
+    // we want one immediate sample THEN an interval until terminal.
+    if (!_isTerminal(status)) {
+      void poll();
+    }
+    return () => {
+      mountedRef.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    // Keep polling whenever we don't yet have a terminal state. Covers:
+    //   - status null      (SSR loader failed, server hasn't replied yet)
+    //   - found false      (audit_job not created yet — install just happened)
+    //   - status queued    (job created, daemon thread hasn't picked it up)
+    //   - status running   (daemon thread working: generating_topics / scanning)
+    if (_isTerminal(status)) {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+      return;
+    }
     timerRef.current = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(timerRef.current);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      timerRef.current = null;
+    };
   }, [status, poll]);
 
-  if (!status || !status.found) return null;
+  // Pre-audit waiting state — no audit_job yet OR loader hasn't returned.
+  // Show a placeholder banner so the merchant isn't left wondering whether
+  // anything is happening at all.
+  if (!status || !status.found) {
+    return (
+      <Banner tone="info" title="Setting up your first AI-visibility scan…">
+        <Text as="p">
+          Hang tight — we're spinning up your audit. This usually takes 1–2 minutes.
+        </Text>
+      </Banner>
+    );
+  }
 
   const s = status.status || "unknown";
 
