@@ -56,7 +56,9 @@ export function ScanningProgress({ initialStatus }) {
     const note = status?.error?.note || "";
     const friendly =
       reason === "topics_required"
-        ? "We don't have topics configured for this brand yet — visibility scoring needs them to know what to scan for. Open the dashboard and run topic generation, then we'll re-fire automatically."
+        ? "We couldn't auto-generate topics for your store on the first pass. Open the dashboard, run topic generation manually, and we'll re-fire the audit."
+        : reason === "auto_topic_gen_disabled"
+        ? "First audits are paused while topic auto-generation is being rolled out. Open the dashboard to start one manually."
         : note || `Audit failed: ${reason}`;
     return (
       <Banner tone="warning" title="First audit needs a nudge">
@@ -82,17 +84,24 @@ export function ScanningProgress({ initialStatus }) {
   const pct = total > 0 ? Math.round((done / total) * 100) : Number(status.progress_pct || 0);
   const platformsDone = Array.isArray(status.platforms_done) ? status.platforms_done : [];
   const platformsPending = Array.isArray(status.platforms_pending) ? status.platforms_pending : [];
+  const isGeneratingTopics = platformsPending.includes("generating_topics");
+
+  const headline = isGeneratingTopics
+    ? "Generating your visibility topics…"
+    : "Scanning AI visibility…";
+
+  const body = isGeneratingTopics
+    ? "We're picking the right topics + prompts to test your brand against. This takes 1–2 minutes; the audit fires automatically when it's done."
+    : total > 0
+    ? `Submitting ${total} prompts across AI platforms. ${done}/${total} done.`
+    : "Setting up your first AI-visibility scan…";
 
   return (
-    <Banner tone="info" title="Scanning AI visibility…">
+    <Banner tone="info" title={headline}>
       <BlockStack gap="200">
-        <Text as="p">
-          {total > 0
-            ? `Submitting ${total} prompts across AI platforms. ${done}/${total} done.`
-            : "Setting up your first AI-visibility scan…"}
-        </Text>
+        <Text as="p">{body}</Text>
         <ProgressBar progress={pct} size="small" tone="primary" />
-        {(platformsDone.length || platformsPending.length) ? (
+        {!isGeneratingTopics && (platformsDone.length || platformsPending.length) ? (
           <InlineStack gap="200">
             {platformsDone.map((p) => (
               <Text as="span" key={`d-${p}`} tone="success" variant="bodySm">
