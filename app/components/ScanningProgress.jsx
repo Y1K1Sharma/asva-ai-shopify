@@ -90,10 +90,16 @@ export function ScanningProgress({ initialStatus }) {
     ? "Generating your visibility topics…"
     : "Scanning AI visibility…";
 
+  const platformLabel = platformsDone.length
+    ? platformsDone.length === 1
+      ? platformsDone[0]
+      : `${platformsDone.length} AI platforms`
+    : "AI platforms";
+
   const body = isGeneratingTopics
     ? "We're picking the right topics + prompts to test your brand against. This takes 1–2 minutes; the audit fires automatically when it's done."
     : total > 0
-    ? `Submitting ${total} prompts across AI platforms. ${done}/${total} done.`
+    ? `Submitting ${total} prompts across ${platformLabel}. ${done}/${total} done.`
     : "Setting up your first AI-visibility scan…";
 
   return (
