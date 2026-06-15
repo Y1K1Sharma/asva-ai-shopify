@@ -130,23 +130,39 @@ export async function fetchShopBasics(admin) {
 
 // SHOP-PERFECT Phase 4 — full snapshot query for on-install ingest.
 //
-// Asks for the shop + top 20 best-selling products + 10 most-recently-updated
-// collections in one round trip. Themes are intentionally NOT included — they'd
-// require an extra read_themes scope that we don't ship today, and the
-// dashboard doesn't render theme info yet (deferred to a later phase). The
-// query budget stays under ~150 Admin API points which is well within the
-// 1000pt/min per-shop ceiling.
-const SHOP_SNAPSHOT_QUERY = `#graphql
-  query AsvaShopSnapshot {
-    shop {
-      name
-      primaryDomain { host url }
-      currencyCode
-      contactEmail
-      shopOwnerName
-      billingAddress { country countryCodeV2 }
+// Asks for the shop + most-recently-updated products and collections in one
+// or two round trips. Themes are intentionally NOT included — they'd require
+// an extra read_themes scope that we don't ship today. Pagination is capped
+// at PRODUCTS_MAX_PAGES * PRODUCTS_PAGE_SIZE so a 5,000-SKU catalog doesn't
+// blow the 1000pt/min budget (each products(first:N) page costs ~N*2 pts).
+const PRODUCTS_PAGE_SIZE = 100;
+const PRODUCTS_MAX_PAGES = 5; // ceiling: 500 products / install. Stylera has ~400.
+
+const SHOP_HEADER_FRAGMENT = `#graphql
+  shop {
+    name
+    primaryDomain { host url }
+    currencyCode
+    contactEmail
+    shopOwnerName
+    billingAddress { country countryCodeV2 }
+  }
+  collections(first: 25, sortKey: UPDATED_AT, reverse: true) {
+    edges {
+      node {
+        id
+        title
+        handle
+        productsCount { count }
+      }
     }
-    products(first: 20, sortKey: UPDATED_AT, reverse: true) {
+  }
+`;
+
+const PRODUCTS_PAGE_QUERY = `#graphql
+  query AsvaProductsPage($cursor: String) {
+    products(first: ${PRODUCTS_PAGE_SIZE}, after: $cursor, sortKey: UPDATED_AT, reverse: true) {
+      pageInfo { hasNextPage endCursor }
       edges {
         node {
           id
@@ -160,16 +176,12 @@ const SHOP_SNAPSHOT_QUERY = `#graphql
         }
       }
     }
-    collections(first: 10, sortKey: UPDATED_AT, reverse: true) {
-      edges {
-        node {
-          id
-          title
-          handle
-          productsCount { count }
-        }
-      }
-    }
+  }
+`;
+
+const SHOP_HEADER_QUERY = `#graphql
+  query AsvaShopHeader {
+    ${SHOP_HEADER_FRAGMENT}
   }
 `;
 
@@ -181,8 +193,11 @@ const SHOP_SNAPSHOT_QUERY = `#graphql
  * until Phase 5's full audit pipeline ships. Resolves to null on any GraphQL
  * failure so a single bad response can't block the loader.
  *
+ * Returns a shape compatible with lib/shopify_ingest.parse_shop_snapshot() —
+ * data.shop / data.collections / data.products (with .edges[].node entries).
+ *
  * @param {object} admin
- * @returns {Promise<null | object>} raw GraphQL response body (data.shop / data.products / data.collections)
+ * @returns {Promise<null | object>}
  */
 export async function fetchShopSnapshot(admin) {
   // eslint-disable-next-line no-undef
@@ -191,15 +206,42 @@ export async function fetchShopSnapshot(admin) {
   if (!admin || typeof admin.graphql !== "function") return null;
 
   try {
-    const res = await admin.graphql(SHOP_SNAPSHOT_QUERY);
-    const json = await res.json();
-    if (json.errors) {
-      console.error("[shopify-admin] fetchShopSnapshot graphql errors:", JSON.stringify(json.errors));
+    // 1. Shop header + collections (small, single call).
+    const headerRes = await admin.graphql(SHOP_HEADER_QUERY);
+    const headerJson = await headerRes.json();
+    if (headerJson.errors) {
+      console.error("[shopify-admin] fetchShopSnapshot header errors:", JSON.stringify(headerJson.errors));
       return null;
     }
-    // Hand the data block directly to the backend — the Python parser in
-    // lib/shopify_ingest.parse_shop_snapshot() expects exactly this shape.
-    return json?.data || null;
+    const headerData = headerJson?.data || {};
+
+    // 2. Paginate products until hasNextPage=false OR we hit the page ceiling.
+    const productEdges = [];
+    let cursor = null;
+    let pages = 0;
+    while (pages < PRODUCTS_MAX_PAGES) {
+      const r = await admin.graphql(PRODUCTS_PAGE_QUERY, { variables: { cursor } });
+      const j = await r.json();
+      if (j.errors) {
+        console.error(
+          "[shopify-admin] fetchShopSnapshot products page %d errors:",
+          pages, JSON.stringify(j.errors),
+        );
+        break;
+      }
+      const page = j?.data?.products;
+      if (!page) break;
+      for (const edge of page.edges || []) productEdges.push(edge);
+      pages += 1;
+      if (!page.pageInfo?.hasNextPage) break;
+      cursor = page.pageInfo?.endCursor || null;
+      if (!cursor) break;
+    }
+
+    return {
+      ...headerData,
+      products: { edges: productEdges },
+    };
   } catch (err) {
     console.error("[shopify-admin] fetchShopSnapshot threw (non-fatal):", err?.message || err);
     return null;
