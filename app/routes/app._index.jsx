@@ -19,8 +19,9 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
-import { provisionShop } from "../asva-api.server";
+import { ASVA_API_BASE, provisionShop } from "../asva-api.server";
 import { fetchShopBasics } from "../lib/shopify-admin.server";
+import { ScanningProgress } from "../components/ScanningProgress";
 
 export const loader = async ({ request }) => {
   // Authenticate FIRST. Throwing redirect before authenticate.admin() runs
@@ -69,11 +70,30 @@ export const loader = async ({ request }) => {
   } catch (err) {
     console.error("[app._index] dashboard provision failed:", err?.message || err);
   }
-  return { asvaBrand };
+
+  // SHOP-PERFECT Phase 5 — initial audit-status snapshot so the first paint
+  // shows the right banner instead of blanking for 10s. Best-effort; the
+  // client component re-polls every 10s via /app/audit-status anyway.
+  let initialAuditStatus = null;
+  // eslint-disable-next-line no-undef
+  const appKey = process.env.ASVA_APP_KEY || "";
+  if (session?.shop && appKey) {
+    try {
+      const r = await fetch(
+        `${ASVA_API_BASE}/api/v5/shopify/audit-status?shop_domain=${encodeURIComponent(session.shop)}`,
+        { headers: { "X-Asva-App-Key": appKey } },
+      );
+      if (r.ok) initialAuditStatus = await r.json();
+    } catch (err) {
+      console.error("[app._index] audit-status fetch failed:", err?.message || err);
+    }
+  }
+
+  return { asvaBrand, initialAuditStatus };
 };
 
 export default function DashboardHome() {
-  const { asvaBrand } = useLoaderData();
+  const { asvaBrand, initialAuditStatus } = useLoaderData();
   const navigate = useNavigate();
   const iframeRef = useRef(null);
   const [failed, setFailed] = useState(false);
@@ -143,32 +163,37 @@ export default function DashboardHome() {
   const embedSrc = slug ? `/embed/${slug}` : "/embed/";
 
   return (
-    <iframe
-      ref={iframeRef}
-      src={embedSrc}
-      title="Asva AI Dashboard"
-      onError={() => setFailed(true)}
-      onLoad={() => {
-        const win = iframeRef.current?.contentWindow;
-        if (win && asvaBrand) {
-          win.postMessage(
-            {
-              type: "asva-embedded-auth",
-              token: asvaBrand.token,
-              brandId: asvaBrand.brandId,
-              brandName: asvaBrand.brandName,
-              brandDomain: asvaBrand.brandDomain,
-            },
-            window.location.origin,
-          );
-        }
-      }}
-      style={{
-        width: "100%",
-        height: "100vh",
-        border: "none",
-        display: "block",
-      }}
-    />
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+      <div style={{ padding: "12px 16px 0" }}>
+        <ScanningProgress initialStatus={initialAuditStatus} />
+      </div>
+      <iframe
+        ref={iframeRef}
+        src={embedSrc}
+        title="Asva AI Dashboard"
+        onError={() => setFailed(true)}
+        onLoad={() => {
+          const win = iframeRef.current?.contentWindow;
+          if (win && asvaBrand) {
+            win.postMessage(
+              {
+                type: "asva-embedded-auth",
+                token: asvaBrand.token,
+                brandId: asvaBrand.brandId,
+                brandName: asvaBrand.brandName,
+                brandDomain: asvaBrand.brandDomain,
+              },
+              window.location.origin,
+            );
+          }
+        }}
+        style={{
+          width: "100%",
+          flex: 1,
+          border: "none",
+          display: "block",
+        }}
+      />
+    </div>
   );
 }
