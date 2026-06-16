@@ -1,7 +1,6 @@
-import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ingestOnInstall, provisionShop } from "../asva-api.server";
 import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
@@ -103,19 +102,11 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={enTranslations}>
-        {/*
-         * Phase 5.9c — switched from <s-app-nav><s-link href="..."> (Polaris
-         * web components) to <NavMenu> from @shopify/app-bridge-react with
-         * react-router <Link to="...">. The old <s-link> components triggered
-         * full-page navigation through Shopify Admin's iframe handshake on
-         * every click, causing 10–15s tab switches. NavMenu+Link routes
-         * client-side via React Router → instant nav.
-         */}
-        <NavMenu>
-          <Link to="/app" rel="home">Dashboard</Link>
-          <Link to="/app/agentic-readiness">Agentic Readiness</Link>
-          <Link to="/app/settings">Settings</Link>
-        </NavMenu>
+        <s-app-nav>
+          <s-link href="/app">Dashboard</s-link>
+          <s-link href="/app/agentic-readiness">Agentic Readiness</s-link>
+          <s-link href="/app/settings">Settings</s-link>
+        </s-app-nav>
         <Outlet />
       </PolarisAppProvider>
     </AppProvider>
