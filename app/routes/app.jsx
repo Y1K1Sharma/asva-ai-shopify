@@ -1,6 +1,7 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
+import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { ingestOnInstall, provisionShop } from "../asva-api.server";
 import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
@@ -102,11 +103,26 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={enTranslations}>
-        <s-app-nav>
-          <s-link href="/app">Dashboard</s-link>
-          <s-link href="/app/agentic-readiness">Agentic Readiness</s-link>
-          <s-link href="/app/settings">Settings</s-link>
-        </s-app-nav>
+        {/*
+         * Phase 5.9c — switched from <s-app-nav><s-link href="..."> (Polaris
+         * web components) to <NavMenu> + react-router <Link>. <s-link> with
+         * href= forced a full Shopify Admin iframe handshake on every click,
+         * causing 10–15s tab switches. NavMenu + Link routes client-side via
+         * React Router → near-instant nav.
+         *
+         * Layout note: NavMenu's rel="home" link is the link Shopify Admin
+         * uses for "click the app name" (e.g. clicking "Asva AI" in the
+         * Shopify left sidebar) — its text label is NOT shown as a visible
+         * nav tab. So we set rel="home" to "Asva AI" (the brand name) and
+         * add an explicit "Dashboard" tab pointing at /app so the user always
+         * has a visible Dashboard entry in the nav row.
+         */}
+        <NavMenu>
+          <Link to="/app" rel="home">Asva AI</Link>
+          <Link to="/app">Dashboard</Link>
+          <Link to="/app/agentic-readiness">Agentic Readiness</Link>
+          <Link to="/app/settings">Settings</Link>
+        </NavMenu>
         <Outlet />
       </PolarisAppProvider>
     </AppProvider>
