@@ -2,8 +2,19 @@ import { redirect } from "react-router";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
+  // Phase 5.9b — Shopify Admin's embedded-app proxy sometimes drops the
+  // `shop` query param but always preserves `host` and `embedded`. The old
+  // check only redirected when `shop` was present, so iframe loads of
+  // /apps/asva-ai-2 (root) without `shop` fell through to the public
+  // marketing page until Yash hit reload. Redirect on ANY embedded signal.
   const url = new URL(request.url);
-  if (url.searchParams.get("shop")) {
+  const isEmbedded =
+    url.searchParams.has("shop") ||
+    url.searchParams.has("host") ||
+    url.searchParams.has("embedded") ||
+    url.searchParams.has("hmac") ||
+    url.searchParams.has("session");
+  if (isEmbedded) {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
   return {};
