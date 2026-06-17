@@ -23,10 +23,13 @@ import { Banner, ProgressBar, BlockStack, Text, InlineStack } from "@shopify/pol
 const POLL_INTERVAL_MS = 4_000;
 // Terminal states — once we hit one of these we stop polling.
 const TERMINAL_STATES = new Set(["completed", "failed", "cancelled"]);
-// Hide the success banner this many seconds after the audit completed, so
-// merchants who navigate around the dashboard later don't keep seeing the
-// "first audit submitted" pill weeks later.
-const SUCCESS_AUTO_HIDE_SEC = 90;
+// Phase 5.10d — bumped 90s → 30 min. The earlier 90s window caused the
+// banner to disappear mid-audit when a merchant tab-switched back into
+// the iframe and the SSR loader's snapshot read happened to be old —
+// the success Banner would never re-paint with the latest count and the
+// running banner would freeze on the last polled state. Aligns with the
+// upper bound of a slow first-audit (~10 min) plus a comfort buffer.
+const SUCCESS_AUTO_HIDE_SEC = 30 * 60;
 
 function _isTerminal(s) {
   return s && s.found && TERMINAL_STATES.has(s.status);
@@ -50,7 +53,16 @@ export function ScanningProgress({ initialStatus }) {
 
   const poll = useCallback(async () => {
     try {
-      const res = await fetch("/app/audit-status", { method: "GET" });
+      // Phase 5.10d — cache-bust every poll so a CDN or Shopify embedded
+      // proxy can't serve a stale 304. The endpoint reads live counts
+      // from prompts_responses each call; we want every tick to actually
+      // round-trip, not get short-circuited by a conditional GET. The
+      // no-store header is belt-and-braces against the browser HTTP cache.
+      const res = await fetch(`/app/audit-status?ts=${Date.now()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       if (res.ok && mountedRef.current) {
         const body = await res.json();
         setStatus(body);
@@ -62,14 +74,14 @@ export function ScanningProgress({ initialStatus }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    // Always do an immediate poll on mount unless we already have a
-    // terminal snapshot — the SSR loader's initialStatus may have raced
-    // ingest_on_install and returned `found: false` before the audit job
-    // existed, OR the audit may have completed in seconds. Either way,
-    // we want one immediate sample THEN an interval until terminal.
-    if (!_isTerminal(status)) {
-      void poll();
-    }
+    // Phase 5.10d — ALWAYS fire one fresh poll on mount, even if the SSR
+    // snapshot reports terminal. The loader's snapshot can be minutes old
+    // by the time the SPA paints (the snapshot was fetched at navigation
+    // start; tab-switch back hits the cached SSR HTML). One immediate
+    // round-trip rules out a stale "running" or stale "completed" frozen
+    // count. Subsequent polling is gated by _isTerminal in the next
+    // useEffect, so this doesn't cause runaway requests.
+    void poll();
     return () => {
       mountedRef.current = false;
     };
