@@ -40,6 +40,7 @@ export const loader = async ({ request }) => {
         brandName: p.brand_name,
         shopOwnerEmail: (shopBasics?.contactEmail || "").trim().toLowerCase() || "",
         shopOwnerName: (shopBasics?.shopOwnerName || "").trim() || "",
+        countryCode: (shopBasics?.countryCode || "").toUpperCase() || "",
       };
     }
   } catch (err) {
@@ -68,6 +69,7 @@ export default function SignupCompetitors() {
           brandDomain: asvaBrand.brandDomain,
           shopOwnerEmail: asvaBrand.shopOwnerEmail,
           shopOwnerName: asvaBrand.shopOwnerName,
+          countryCode: asvaBrand.countryCode || "",
         },
         window.location.origin,
       );
@@ -117,6 +119,7 @@ export default function SignupCompetitors() {
                 brandDomain: asvaBrand.brandDomain,
                 shopOwnerEmail: asvaBrand.shopOwnerEmail || "",
                 shopOwnerName: asvaBrand.shopOwnerName || "",
+                countryCode: asvaBrand.countryCode || "",
               },
               window.location.origin,
             );

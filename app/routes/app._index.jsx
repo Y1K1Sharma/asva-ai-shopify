@@ -95,24 +95,28 @@ export const loader = async ({ request }) => {
     }
   }
 
-  // SHOP-CONVERGE Phase 4 — when the signup gate flag is on, route the
-  // merchant to /app/signup/* if they haven't completed the 3-step signup
-  // yet. Flag default OFF so existing installs land on Dashboard as today.
-  // Flip ASVA_SIGNUP_GATE_ENABLED=true on Railway to turn the new flow on
-  // for fresh installs.
+  // SHOP-CONVERGE Phase 4 + 6e — when the signup gate flag is on, route
+  // the merchant to /app/signup/* if they haven't completed the 3-step
+  // signup yet. Flag default OFF so existing installs land on Dashboard.
+  //
+  // 6e UX rewrite: we no longer route to /app/signup/preparing while the
+  // prefill worker is mid-flight. Step 1 (Brand) needs only data we
+  // ALREADY have from Shopify Admin at provision time (brand_name,
+  // primary domain, country_code) — there's nothing to wait for. So we
+  // land the merchant directly on /app/signup/brand and the SPA fills
+  // those fields from the embedded auth payload synchronously. The
+  // classifier + competitor LLM keep running in the background; Step 2
+  // and Step 3 poll the prefill endpoint and fill in when ready. Worst
+  // case (LLM never returns) the merchant fills categories/competitors
+  // manually — same UX as the web flow with no auto-detect.
   //
   // eslint-disable-next-line no-undef
   const gateFlag = (process.env.ASVA_SIGNUP_GATE_ENABLED ?? "false").toLowerCase();
   const gateEnabled = gateFlag === "true" || gateFlag === "1" || gateFlag === "on";
   if (gateEnabled && initialAuditStatus) {
     const step = initialAuditStatus.signup_step;
-    const ready = initialAuditStatus.signup_prefill_ready_at;
     if (step && step !== "done") {
       const url = new URL(request.url);
-      // No prefill yet → spinner. Prefill ready → route to the saved step.
-      if (!ready) {
-        throw redirect("/app/signup/preparing" + url.search);
-      }
       if (step === "competitors") {
         throw redirect("/app/signup/competitors" + url.search);
       }
