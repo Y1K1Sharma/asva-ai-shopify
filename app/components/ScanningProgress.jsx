@@ -142,6 +142,34 @@ export function ScanningProgress({ initialStatus }) {
     );
   }
 
+  // SHOP-CONVERGE Phase 5 — between "merchant finished 3-step signup" and
+  // "admin triggered Cloro runs in /admin/queues", the audit_job sits in
+  // 'queued' with no prompts in flight. Show a distinct "queued for review"
+  // banner so the merchant knows scanning hasn't started yet (and won't,
+  // until Yash promotes/approves/triggers in the admin queue).
+  //
+  // Inference rule:
+  //   signup_completed_at is set         (merchant finished step 3)
+  //   AND audit status is queued / null  (Cloro not running yet)
+  //   AND no prompts have landed yet     (prompt_count_total == 0)
+  // The moment Yash triggers Cloro, prompts get queued and the next poll
+  // tick flips into the standard "Scanning AI visibility…" running state.
+  if (
+    status.signup_completed_at &&
+    (s === "queued" || s === "unknown" || !s) &&
+    Number(status.prompt_count_total || 0) === 0
+  ) {
+    return (
+      <Banner tone="info" title="Your AI-visibility audit is queued">
+        <Text as="p">
+          Our team reviews each brand setup before scanning starts. We&apos;ll
+          email you the moment your first results are ready — typically within
+          24 hours of install.
+        </Text>
+      </Banner>
+    );
+  }
+
   if (s === "completed") {
     // Auto-hide the success banner once we're past completed_at by N minutes,
     // and surface a dismiss X via Polaris Banner.onDismiss so merchants can
