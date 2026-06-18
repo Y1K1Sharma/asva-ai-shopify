@@ -1,4 +1,5 @@
-import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
+import { useEffect } from "react";
+import { Link, Outlet, useLoaderData, useLocation, useNavigate, useRevalidator, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -133,6 +134,45 @@ import enTranslations from "@shopify/polaris/locales/en.json";
 export default function App() {
   const { apiKey, signupStep, gateEnabled } = useLoaderData();
   const location = useLocation();
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
+
+  // SHOP-CONVERGE 6d — global signup-complete handler.
+  //
+  // Each /app/signup/<step> shell route hosts an iframe of the embedded
+  // SPA. The SPA's internal react-router moves through brand→categories
+  // →competitors inside the SAME iframe, so the parent shell URL stays on
+  // whichever step the merchant landed on FIRST (usually /app/signup/brand
+  // when the gate redirected them from /app). Earlier we only listened
+  // for `asva-signup-complete` inside app.signup.competitors.jsx — that
+  // missed the common path "land at brand, walk all 3 steps, finish from
+  // brand's iframe". Symptom: post-signup the iframe rendered the brand
+  // dashboard but the shell URL stayed at /app/signup/brand and the
+  // NavMenu tabs (Dashboard / Agentic Readiness / Settings) stayed hidden
+  // because `inSignupFlow` keyed off the path.
+  //
+  // Move the listener to the App component (parent of every signup shell
+  // route) so the redirect fires regardless of which shell route the
+  // shell is currently sitting on. Also revalidate the loader so
+  // `signupStep` reflects the new 'done' state and the NavMenu re-renders
+  // with the full tab row on the same tick.
+  useEffect(() => {
+    function onMessage(ev) {
+      if (ev.origin !== window.location.origin) return;
+      if (ev.data?.type !== "asva-embedded-signup-complete" && ev.data?.type !== "asva-signup-complete") return;
+      // Already at /app — nothing to do.
+      if (location.pathname === "/app") {
+        revalidator.revalidate();
+        return;
+      }
+      navigate("/app", { replace: true });
+      // Force a re-fetch of the loader so signupStep flips to 'done' and
+      // the NavMenu tabs reappear without a manual reload.
+      setTimeout(() => revalidator.revalidate(), 50);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [navigate, revalidator, location.pathname]);
 
   // SHOP-CONVERGE Phase 4 — during the 3-step signup we hide the analytics
   // tabs from the NavMenu so the merchant isn't tempted to click into an

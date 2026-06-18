@@ -109,7 +109,10 @@ export default function SignupPreparing() {
           </InlineStack>
           <Text as="p" tone="subdued">
             We&apos;re analysing your store catalog so your three signup steps
-            arrive pre-filled. This usually takes 30–60 seconds.
+            arrive pre-filled — brand details, the categories you sell, and the
+            competitors you should track. This usually takes 30 seconds to 2
+            minutes; stay on this page and we&apos;ll route you through
+            automatically.
           </Text>
           <ProgressBar progress={progressPct} size="small" tone="primary" />
           <Text as="p" tone="subdued" variant="bodySm">
