@@ -1,9 +1,9 @@
-import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
+import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { ingestOnInstall, provisionShop } from "../asva-api.server";
+import { ingestOnInstall, provisionShop, ASVA_API_BASE } from "../asva-api.server";
 import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
@@ -89,8 +89,41 @@ export const loader = async ({ request }) => {
     }
   }
 
+  // SHOP-CONVERGE Phase 4 — read signup_step + gate flag so the NavMenu can
+  // hide non-signup tabs while the merchant is still in the 3-step flow.
+  // Flag default OFF so existing installs see the full nav as today.
+  //
   // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", asvaBrand, shopBasics };
+  const gateFlag = (process.env.ASVA_SIGNUP_GATE_ENABLED ?? "false").toLowerCase();
+  const gateEnabled = gateFlag === "true" || gateFlag === "1" || gateFlag === "on";
+  let signupStep = "done";
+  if (gateEnabled && session?.shop) {
+    // eslint-disable-next-line no-undef
+    const appKey2 = process.env.ASVA_APP_KEY || "";
+    if (appKey2) {
+      try {
+        const r = await fetch(
+          `${ASVA_API_BASE}/api/v5/shopify/audit-status?shop_domain=${encodeURIComponent(session.shop)}`,
+          { headers: { "X-Asva-App-Key": appKey2 } },
+        );
+        if (r.ok) {
+          const body = await r.json();
+          if (body?.signup_step) signupStep = body.signup_step;
+        }
+      } catch (err) {
+        console.error("[app loader] signup_step fetch failed:", err?.message || err);
+      }
+    }
+  }
+
+  // eslint-disable-next-line no-undef
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    asvaBrand,
+    shopBasics,
+    signupStep,
+    gateEnabled,
+  };
 };
 
 import "@shopify/polaris/build/esm/styles.css";
@@ -98,7 +131,25 @@ import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
 
 export default function App() {
-  const { apiKey } = useLoaderData();
+  const { apiKey, signupStep, gateEnabled } = useLoaderData();
+  const location = useLocation();
+
+  // SHOP-CONVERGE Phase 4 — during the 3-step signup we hide the analytics
+  // tabs from the NavMenu so the merchant isn't tempted to click into an
+  // empty Dashboard / Agentic Readiness / Settings before they've finished
+  // signup. The Shopify left sidebar still shows "Asva AI" so they can
+  // re-open the app, but the inner tab row collapses to just the brand
+  // link until signup_step='done'.
+  //
+  // Flag-gated: when ASVA_SIGNUP_GATE_ENABLED is off (default), full nav
+  // shows for everyone. Also fallback-safe: if signupStep wasn't fetched
+  // (eg. backend unreachable) we treat the merchant as past signup and
+  // show the full nav rather than locking them out.
+  const inSignupFlow =
+    gateEnabled &&
+    signupStep &&
+    signupStep !== "done" &&
+    location.pathname.startsWith("/app/signup");
 
   return (
     <AppProvider embedded apiKey={apiKey}>
@@ -119,9 +170,13 @@ export default function App() {
          */}
         <NavMenu>
           <Link to="/app" rel="home">Asva AI</Link>
-          <Link to="/app">Dashboard</Link>
-          <Link to="/app/agentic-readiness">Agentic Readiness</Link>
-          <Link to="/app/settings">Settings</Link>
+          {inSignupFlow ? null : (
+            <>
+              <Link to="/app">Dashboard</Link>
+              <Link to="/app/agentic-readiness">Agentic Readiness</Link>
+              <Link to="/app/settings">Settings</Link>
+            </>
+          )}
         </NavMenu>
         <Outlet />
       </PolarisAppProvider>

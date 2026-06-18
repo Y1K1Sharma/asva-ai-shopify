@@ -95,6 +95,35 @@ export const loader = async ({ request }) => {
     }
   }
 
+  // SHOP-CONVERGE Phase 4 — when the signup gate flag is on, route the
+  // merchant to /app/signup/* if they haven't completed the 3-step signup
+  // yet. Flag default OFF so existing installs land on Dashboard as today.
+  // Flip ASVA_SIGNUP_GATE_ENABLED=true on Railway to turn the new flow on
+  // for fresh installs.
+  //
+  // eslint-disable-next-line no-undef
+  const gateFlag = (process.env.ASVA_SIGNUP_GATE_ENABLED ?? "false").toLowerCase();
+  const gateEnabled = gateFlag === "true" || gateFlag === "1" || gateFlag === "on";
+  if (gateEnabled && initialAuditStatus) {
+    const step = initialAuditStatus.signup_step;
+    const ready = initialAuditStatus.signup_prefill_ready_at;
+    if (step && step !== "done") {
+      const url = new URL(request.url);
+      // No prefill yet → spinner. Prefill ready → route to the saved step.
+      if (!ready) {
+        throw redirect("/app/signup/preparing" + url.search);
+      }
+      if (step === "competitors") {
+        throw redirect("/app/signup/competitors" + url.search);
+      }
+      if (step === "categories") {
+        throw redirect("/app/signup/categories" + url.search);
+      }
+      // step === 'brand' (or unknown sane default)
+      throw redirect("/app/signup/brand" + url.search);
+    }
+  }
+
   return { asvaBrand, initialAuditStatus };
 };
 
