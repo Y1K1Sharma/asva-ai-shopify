@@ -19,8 +19,8 @@
 import { useEffect, useRef, useState } from "react";
 import { redirect, useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
-import { ASVA_API_BASE, provisionShop } from "../asva-api.server";
-import { fetchShopBasics } from "../lib/shopify-admin.server";
+import { ASVA_API_BASE, ingestOnInstall, provisionShop } from "../asva-api.server";
+import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
 import { ScanningProgress } from "../components/ScanningProgress";
 
 export const loader = async ({ request }) => {
@@ -75,6 +75,39 @@ export const loader = async ({ request }) => {
     }
   } catch (err) {
     console.error("[app._index] dashboard provision failed:", err?.message || err);
+  }
+
+  // SHOP-CONVERGE 6g — instant ingest MUST complete BEFORE the audit-status
+  // fetch below, otherwise the signup-gate decision below runs against a
+  // pre-ingest snapshot where shopify_merchants/shopify_audit_jobs don't
+  // exist yet, audit-status returns {found:false, signup_step:null}, and
+  // the gate skips → merchant lands on the legacy dashboard.
+  //
+  // Previously this lived in app.jsx (the parent route). Router 7 runs
+  // parent + child loaders in PARALLEL, so the parent's ingest call raced
+  // against this loader's audit-status fetch and lost in prod (Stylera
+  // install 2026-06-18 / Jun 19 fix).
+  //
+  // ingestOnInstall is idempotent (reuses existing first_audit_job_id), so
+  // calling it from the child loader is safe even if a future change adds
+  // it back to the parent.
+  if (session?.shop && asvaBrand) {
+    try {
+      const snapshot = await fetchShopSnapshot(admin);
+      if (snapshot) {
+        const result = await ingestOnInstall(session.shop, snapshot);
+        if (result?.ingested) {
+          console.log(
+            `[app._index] instant ingest OK for ${session.shop}: ${result.products_count} products, ${result.catalog_rows_written} catalog rows, audit_job=${result.audit_job_id}`,
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        "[app._index] instant ingest failed (non-fatal):",
+        err?.message || err,
+      );
+    }
   }
 
   // SHOP-PERFECT Phase 5 — initial audit-status snapshot so the first paint

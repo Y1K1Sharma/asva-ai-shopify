@@ -4,8 +4,8 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { NavMenu } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { ingestOnInstall, provisionShop, ASVA_API_BASE } from "../asva-api.server";
-import { fetchShopBasics, fetchShopSnapshot } from "../lib/shopify-admin.server";
+import { provisionShop, ASVA_API_BASE } from "../asva-api.server";
+import { fetchShopBasics } from "../lib/shopify-admin.server";
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -56,39 +56,17 @@ export const loader = async ({ request }) => {
     );
   }
 
-  // SHOP-PERFECT Phase 4 — instant ingest.
-  //
-  // When ASVA_INSTANT_INGEST=true the backend gets a fresh Admin snapshot
-  // (~150 API points) and seeds parent_brand.industry/keywords/top_pages +
-  // merchant_catalog_entries + queues the first-audit job. Gating lives
-  // inside fetchShopSnapshot — returns null when the flag is off so this
-  // chain is a no-op cost-free no-op in the default state.
-  //
-  // AWAITED (not fire-and-forget) so the promise actually completes inside
-  // the request lifecycle. The initial fire-and-forget pattern silently
-  // dropped under React Router 7's server runtime — the loader returned, the
-  // response was sent, and the dangling promise never ran. Cost is ~200-400ms
-  // extra on the FIRST app load when the flag is on; subsequent loads hit
-  // the backend dedup path and return fast. Errors are swallowed so a bad
-  // backend response can't block dashboard render.
-  if (session?.shop && asvaBrand) {
-    try {
-      const snapshot = await fetchShopSnapshot(admin);
-      if (snapshot) {
-        const result = await ingestOnInstall(session.shop, snapshot);
-        if (result?.ingested) {
-          console.log(
-            `[app loader] instant ingest OK for ${session.shop}: ${result.products_count} products, ${result.catalog_rows_written} catalog rows, audit_job=${result.audit_job_id}`,
-          );
-        }
-      }
-    } catch (err) {
-      console.error(
-        "[app loader] instant ingest failed (non-fatal):",
-        err?.message || err,
-      );
-    }
-  }
+  // SHOP-CONVERGE 6g — instant ingest moved to app._index.jsx loader.
+  // React Router 7 runs parent (app.jsx) + child (app._index.jsx) loaders
+  // in PARALLEL; running ingestOnInstall here raced against the child's
+  // audit-status fetch + signup-gate decision, and the child often won
+  // (audit-status returned {found:false, signup_step:null} → gate skipped
+  // → merchant landed on legacy dashboard). Stylera prod install 2026-06-18
+  // reproduced this. Ingest now happens BEFORE the audit-status fetch
+  // inside app._index.jsx, eliminating the race. ingestOnInstall is
+  // idempotent so other shell routes hitting app.jsx without going through
+  // app._index.jsx (e.g. /app/agentic-readiness) will pick it up the next
+  // time the merchant visits /app.
 
   // SHOP-CONVERGE Phase 4 — read signup_step + gate flag so the NavMenu can
   // hide non-signup tabs while the merchant is still in the 3-step flow.
