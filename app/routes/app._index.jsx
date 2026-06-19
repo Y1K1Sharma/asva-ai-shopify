@@ -111,12 +111,31 @@ export const loader = async ({ request }) => {
   // manually — same UX as the web flow with no auto-detect.
   //
   // eslint-disable-next-line no-undef
-  const gateFlag = (process.env.ASVA_SIGNUP_GATE_ENABLED ?? "false").toLowerCase();
+  const rawGateFlag = process.env.ASVA_SIGNUP_GATE_ENABLED ?? "false";
+  const gateFlag = String(rawGateFlag).trim().toLowerCase();
   const gateEnabled = gateFlag === "true" || gateFlag === "1" || gateFlag === "on";
+  // SHOP-CONVERGE 6f — diagnostic logging while we root-cause why the gate
+  // didn't fire on Stylera prod install despite ASVA_SIGNUP_GATE_ENABLED=true
+  // and BE returning signup_step='brand'. Logs every loader run so we can
+  // see the exact state at decision time in Railway HTTP logs.
+  // eslint-disable-next-line no-console
+  console.log("[shop-converge gate]", JSON.stringify({
+    shop: session?.shop,
+    rawGateFlag: String(rawGateFlag),
+    gateFlag,
+    gateEnabled,
+    appKeyLen: appKey?.length || 0,
+    hasAuditStatus: !!initialAuditStatus,
+    auditFound: initialAuditStatus?.found,
+    signup_step: initialAuditStatus?.signup_step ?? null,
+    signup_prefill_ready_at: initialAuditStatus?.signup_prefill_ready_at ?? null,
+  }));
   if (gateEnabled && initialAuditStatus) {
     const step = initialAuditStatus.signup_step;
     if (step && step !== "done") {
       const url = new URL(request.url);
+      // eslint-disable-next-line no-console
+      console.log("[shop-converge gate] REDIRECTING to /app/signup/" + step);
       if (step === "competitors") {
         throw redirect("/app/signup/competitors" + url.search);
       }
